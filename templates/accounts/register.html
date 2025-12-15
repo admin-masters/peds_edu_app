@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Doctor Registration{% endblock %}
+{% block header_title %}Doctor Registration{% endblock %}
+
+{% block content %}
+<div class="card">
+  <h2>Register your clinic</h2>
+  <p class="muted">After registration, you will receive your clinic's patient education link on this screen and by email.</p>
+
+  <form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+
+    {% for field in form %}
+      <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+      {{ field }}
+      {% if field.errors %}
+        <div class="message error">{{ field.errors|striptags }}</div>
+      {% endif %}
+    {% endfor %}
+
+    <div style="margin-top: 16px;">
+      <button type="submit">Register Doctor</button>
+    </div>
+  </form>
+
+  <div style="margin-top: 16px;" class="muted">
+    Already registered? <a href="{% url 'accounts:login' %}">Login here</a>
+  </div>
+</div>
+{% endblock %}

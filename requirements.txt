@@ -1,0 +1,8 @@
+Django>=4.2,<5.0
+mysqlclient>=2.2
+sendgrid>=6.11
+whitenoise>=6.6
+gunicorn>=21.2
+Pillow>=10.0
+# Optional (recommended for Redis cache):
+django-redis>=5.4

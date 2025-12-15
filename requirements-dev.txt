@@ -1,0 +1,4 @@
+-r requirements.txt
+
+# Optional: AI-based Roman->Indic transliteration for generating localized titles/messages
+ai4bharat-transliteration==1.1.3

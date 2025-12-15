@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}{{ clinic.display_name }} — Bundle{% endblock %}
+{% block header_title %}{{ clinic.display_name }}{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div style="display: flex; align-items: center; gap: 12px;">
+    {% if doctor.photo %}
+      <img src="{{ doctor.photo.url }}" alt="Doctor photo" style="width: 64px; height: 64px; border-radius: 16px; object-fit: cover;" />
+    {% endif %}
+    <div>
+      <div><strong>Dr. {{ doctor.user.full_name }}</strong></div>
+      <div class="muted">{{ clinic.state }}</div>
+    </div>
+  </div>
+
+  <div style="margin-top: 14px;" class="row two">
+    <div>
+      <label for="lang">Language</label>
+      <select id="lang">
+        {% for code,name in languages %}
+          <option value="{{ code }}" {% if code == selected_lang %}selected{% endif %}>{{ name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <div style="margin-top: 14px;">
+    <div style="font-weight: 800; font-size: 18px;">{{ cluster_lang.name|default:cluster.code }}</div>
+    <div class="muted">Please watch all videos in this bundle.</div>
+  </div>
+
+  <hr style="margin: 14px 0;" />
+
+  {% for item in videos %}
+    <div style="margin-bottom: 18px;">
+      <div style="position: relative; padding-top: 56.25%;">
+        <iframe
+          src="{{ item.vlang.youtube_url }}"
+          title="Video"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          allowfullscreen
+          style="position: absolute; top:0; left:0; width:100%; height:100%; border:0; border-radius: 12px;">
+        </iframe>
+      </div>
+      <div style="margin-top: 10px; font-weight: 700;">{{ item.vlang.title }}</div>
+    </div>
+  {% endfor %}
+</div>
+
+<script>
+  const langSelect = document.getElementById('lang');
+  langSelect.addEventListener('change', () => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('lang', langSelect.value);
+    window.location.href = url.toString();
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,17 @@
+[Unit]
+Description=Gunicorn service for peds_edu
+After=network.target
+
+[Service]
+User=ubuntu
+Group=www-data
+WorkingDirectory=/home/ubuntu/peds_edu_app
+EnvironmentFile=/home/ubuntu/peds_edu_app/.env
+ExecStart=/home/ubuntu/peds_edu_app/.venv/bin/gunicorn peds_edu.wsgi:application \
+  --bind 127.0.0.1:8000 \
+  --workers 3 \
+  --timeout 60
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

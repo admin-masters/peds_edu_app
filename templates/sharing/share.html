@@ -1,0 +1,333 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Video Sharing{% endblock %}
+{% block header_title %}{{ doctor.clinic.display_name|default:"Clinic" }} — Video Sharing{% endblock %}
+
+{% block head %}
+<style>
+  .chips { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; }
+  .chip { padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 999px; background: white; cursor: pointer; white-space: nowrap; }
+  .chip.active { background: #111827; color: white; border-color: #111827; }
+  .trigger { border: 1px solid #e6e6e6; border-radius: 12px; background: white; margin: 10px 0; }
+  .trigger-header { padding: 12px 14px; cursor: pointer; display: flex; justify-content: space-between; gap: 12px; }
+  .trigger-title { font-weight: 700; }
+  .trigger-sub { color: #6b7280; font-size: 13px; margin-top: 4px; }
+  .trigger-body { padding: 12px 14px; border-top: 1px solid #e6e6e6; display: none; }
+  .item-row { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px dashed #e5e7eb; }
+  .item-row:last-child { border-bottom: none; }
+  .item-name { font-weight: 600; }
+  .small { font-size: 12px; color: #6b7280; }
+  .bundle-videos { margin-top: 6px; padding-left: 16px; }
+  .bundle-videos li { margin: 3px 0; }
+  .sticky { position: sticky; bottom: 0; background: #f6f7f9; padding: 12px 0; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="row two">
+    <div>
+      <div class="muted">Doctor</div>
+      <div><strong>{{ doctor.user.full_name }}</strong></div>
+      <div class="muted">Doctor ID: {{ doctor.doctor_id }}</div>
+    </div>
+    <div>
+      <div class="muted">Clinic</div>
+      <div><strong>{{ doctor.clinic.display_name }}</strong></div>
+      <div class="muted">{{ doctor.clinic.state }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="card" style="margin-top: 12px;">
+  <label for="search">Search (problem, drug, vaccine...)</label>
+  <input id="search" type="text" placeholder="Type to search" />
+
+  <div style="margin-top: 12px;" class="chips" id="clusterChips"></div>
+
+  <div id="triggerList" style="margin-top: 12px;"></div>
+</div>
+
+<div class="sticky">
+  <div class="card">
+    <div><strong>Selected:</strong> <span id="selectedLabel" class="muted">None</span></div>
+
+    <div class="row two" style="margin-top: 10px;">
+      <div>
+        <label for="lang">Language</label>
+        <select id="lang">
+          {% for code,name in languages %}
+            <option value="{{ code }}">{{ name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="wa">WhatsApp number (10 digits)</label>
+        <input id="wa" type="tel" placeholder="98xxxxxxxx" maxlength="10" />
+      </div>
+    </div>
+
+    <div style="margin-top: 12px; display: flex; gap: 12px; flex-wrap: wrap;">
+      <button id="shareBtn" disabled>Share</button>
+      <span class="muted" id="shareHint">Select a video or bundle, choose language, and enter WhatsApp number.</span>
+    </div>
+  </div>
+</div>
+
+{{ catalog_json|json_script:"catalog-data" }}
+{{ message_prefixes|json_script:"message-prefixes" }}
+
+<script>
+  const catalog = JSON.parse(document.getElementById('catalog-data').textContent);
+  const msgPrefixes = JSON.parse(document.getElementById('message-prefixes').textContent);
+
+  const doctorId = "{{ doctor.doctor_id }}";
+
+  let activeCluster = "ALL";
+  let searchText = "";
+  let expandedTrigger = null;
+
+  let selected = null; // {type: 'video'|'cluster', code, label}
+
+  const elChips = document.getElementById('clusterChips');
+  const elList = document.getElementById('triggerList');
+  const elSearch = document.getElementById('search');
+  const elSelected = document.getElementById('selectedLabel');
+  const elLang = document.getElementById('lang');
+  const elWA = document.getElementById('wa');
+  const elShareBtn = document.getElementById('shareBtn');
+
+  function renderChips() {
+    const chips = [{code: 'ALL', display_name: 'All'}, ...catalog.clusters];
+    elChips.innerHTML = '';
+    for (const c of chips) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'chip' + (c.code === activeCluster ? ' active' : '');
+      b.textContent = c.display_name;
+      b.onclick = () => {
+        activeCluster = c.code;
+        expandedTrigger = null;
+        renderChips();
+        renderTriggers();
+      };
+      elChips.appendChild(b);
+    }
+  }
+
+  function matchesTrigger(t) {
+    if (activeCluster !== 'ALL' && t.cluster_code !== activeCluster) return false;
+
+    if (!searchText) return true;
+    const q = searchText.toLowerCase();
+    const hay = [
+      t.doctor_label,
+      t.subtopic_title,
+      t.therapy_area,
+      t.search_keywords,
+    ].join(' | ').toLowerCase();
+
+    if (hay.includes(q)) return true;
+
+    // Also match if any contained item matches
+    for (const v of t.items.videos) {
+      if ((v.title_en || '').toLowerCase().includes(q)) return true;
+    }
+    for (const c of t.items.video_clusters) {
+      if ((c.name_en || '').toLowerCase().includes(q)) return true;
+      for (const vv of (c.videos || [])) {
+        if ((vv.title_en || '').toLowerCase().includes(q)) return true;
+      }
+    }
+
+    return false;
+  }
+
+  function setSelected(sel) {
+    selected = sel;
+    elSelected.textContent = sel ? sel.label : 'None';
+    updateShareEnabled();
+  }
+
+  function updateShareEnabled() {
+    const waValid = /^\d{10}$/.test(elWA.value.trim());
+    const lang = elLang.value;
+    const ok = !!selected && !!lang && waValid;
+    elShareBtn.disabled = !ok;
+  }
+
+  function renderTriggers() {
+    const filtered = catalog.triggers.filter(matchesTrigger);
+    elList.innerHTML = '';
+
+    if (!filtered.length) {
+      elList.innerHTML = '<div class="muted">No matches</div>';
+      return;
+    }
+
+    for (const t of filtered) {
+      const wrap = document.createElement('div');
+      wrap.className = 'trigger';
+
+      const header = document.createElement('div');
+      header.className = 'trigger-header';
+      header.onclick = () => {
+        expandedTrigger = (expandedTrigger === t.code) ? null : t.code;
+        renderTriggers();
+      };
+
+      const left = document.createElement('div');
+      const title = document.createElement('div');
+      title.className = 'trigger-title';
+      title.textContent = t.doctor_label;
+      const sub = document.createElement('div');
+      sub.className = 'trigger-sub';
+      sub.textContent = t.subtopic_title;
+      left.appendChild(title);
+      left.appendChild(sub);
+
+      const right = document.createElement('div');
+      right.className = 'muted';
+      right.textContent = (expandedTrigger === t.code) ? '▲' : '▼';
+
+      header.appendChild(left);
+      header.appendChild(right);
+
+      const body = document.createElement('div');
+      body.className = 'trigger-body';
+      if (expandedTrigger === t.code) {
+        body.style.display = 'block';
+
+        // Bundles
+        if (t.items.video_clusters.length) {
+          const h = document.createElement('div');
+          h.innerHTML = '<strong>Bundles</strong>';
+          body.appendChild(h);
+
+          for (const c of t.items.video_clusters) {
+            const row = document.createElement('div');
+            row.className = 'item-row';
+
+            const info = document.createElement('div');
+            const nm = document.createElement('div');
+            nm.className = 'item-name';
+            nm.textContent = c.name_en;
+            info.appendChild(nm);
+
+            if (c.videos && c.videos.length) {
+              const ul = document.createElement('ul');
+              ul.className = 'bundle-videos';
+              for (const vv of c.videos) {
+                const li = document.createElement('li');
+                li.className = 'small';
+                li.textContent = vv.title_en;
+                ul.appendChild(li);
+              }
+              info.appendChild(ul);
+            }
+
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.textContent = 'Select bundle';
+            btn.onclick = (ev) => {
+              ev.stopPropagation();
+              setSelected({type: 'cluster', code: c.code, label: 'Bundle: ' + c.name_en});
+            };
+
+            row.appendChild(info);
+            row.appendChild(btn);
+            body.appendChild(row);
+          }
+
+          const hr = document.createElement('hr');
+          hr.style.margin = '14px 0';
+          body.appendChild(hr);
+        }
+
+        // Single videos
+        if (t.items.videos.length) {
+          const h2 = document.createElement('div');
+          h2.innerHTML = '<strong>Single videos</strong>';
+          body.appendChild(h2);
+
+          for (const v of t.items.videos) {
+            const row = document.createElement('div');
+            row.className = 'item-row';
+
+            const info = document.createElement('div');
+            const nm = document.createElement('div');
+            nm.className = 'item-name';
+            nm.textContent = v.title_en;
+            const sm = document.createElement('div');
+            sm.className = 'small';
+            sm.textContent = v.code;
+            info.appendChild(nm);
+            info.appendChild(sm);
+
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.textContent = 'Select video';
+            btn.onclick = (ev) => {
+              ev.stopPropagation();
+              setSelected({type: 'video', code: v.code, label: 'Video: ' + v.title_en});
+            };
+
+            row.appendChild(info);
+            row.appendChild(btn);
+            body.appendChild(row);
+          }
+        }
+
+        if (!t.items.video_clusters.length && !t.items.videos.length) {
+          const empty = document.createElement('div');
+          empty.className = 'muted';
+          empty.textContent = 'Videos in this topic are coming soon.';
+          body.appendChild(empty);
+        }
+      }
+
+      wrap.appendChild(header);
+      wrap.appendChild(body);
+      elList.appendChild(wrap);
+    }
+  }
+
+  function buildPatientLink(lang) {
+    const base = window.location.origin;
+    if (!selected) return null;
+    if (selected.type === 'video') {
+      return `${base}/p/${doctorId}/v/${selected.code}/?lang=${encodeURIComponent(lang)}`;
+    }
+    if (selected.type === 'cluster') {
+      return `${base}/p/${doctorId}/c/${selected.code}/?lang=${encodeURIComponent(lang)}`;
+    }
+    return null;
+  }
+
+  elSearch.addEventListener('input', (e) => {
+    searchText = (e.target.value || '').trim();
+    renderTriggers();
+  });
+
+  elLang.addEventListener('change', updateShareEnabled);
+  elWA.addEventListener('input', updateShareEnabled);
+
+  elShareBtn.addEventListener('click', () => {
+    const wa = elWA.value.trim();
+    const lang = elLang.value;
+    const link = buildPatientLink(lang);
+    if (!link) return;
+
+    const prefix = msgPrefixes[lang] || msgPrefixes['en'] || '';
+    const message = `${prefix} ${link}`;
+
+    // India country code assumed (+91) because you collect 10-digit numbers
+    const waUrl = `https://wa.me/91${wa}?text=${encodeURIComponent(message)}`;
+    window.open(waUrl, '_blank');
+  });
+
+  renderChips();
+  renderTriggers();
+  updateShareEnabled();
+</script>
+{% endblock %}
