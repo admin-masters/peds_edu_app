@@ -10,6 +10,7 @@ from django.contrib.auth.models import PermissionsMixin
 from django.core.validators import RegexValidator
 from django.db import models
 from django.utils import timezone
+from .email_log import EmailLog  # noqa: F401
 
 
 INDIA_STATES_AND_UTS = [
