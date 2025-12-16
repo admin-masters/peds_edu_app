@@ -29,12 +29,20 @@ $PIP install -r requirements.txt
 echo "[deploy] Ensuring static dir exists to avoid warnings..."
 mkdir -p "$PROJECT_DIR/static"
 
-echo "[deploy] Generating migrations (repo is updated via GitHub pipeline)..."
-# This ensures accounts/catalog/sharing migrations exist so admin FK to accounts_user won't fail.
-$PYTHON manage.py makemigrations --noinput
+echo "[deploy] Ensuring migrations packages exist (init files)..."
+mkdir -p "$PROJECT_DIR/accounts/migrations" "$PROJECT_DIR/catalog/migrations" "$PROJECT_DIR/sharing/migrations"
+touch "$PROJECT_DIR/accounts/migrations/__init__.py" \
+      "$PROJECT_DIR/catalog/migrations/__init__.py" \
+      "$PROJECT_DIR/sharing/migrations/__init__.py"
+
+echo "[deploy] Generating migrations for project apps..."
+# Force app-scoped makemigrations so these apps get initial migrations if missing
+$PYTHON manage.py makemigrations accounts --noinput
+$PYTHON manage.py makemigrations catalog --noinput
+$PYTHON manage.py makemigrations sharing --noinput
 
 echo "[deploy] Running migrations..."
-# --fake-initial helps if some tables were partially created in earlier failed runs.
+# --fake-initial helps when earlier failed runs partially created tables
 $PYTHON manage.py migrate --noinput --fake-initial
 
 echo "[deploy] Collecting static files..."
