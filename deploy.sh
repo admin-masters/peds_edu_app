@@ -18,9 +18,16 @@ echo "[deploy] Installing requirements..."
 $PIP install --upgrade pip
 $PIP install -r requirements.txt
 
-echo "[deploy] Ensuring .env exists (create from .env.example if missing, do NOT overwrite)..."
-if [ ! -f "$PROJECT_DIR/.env" ] && [ -f "$PROJECT_DIR/.env.example" ]; then
-  cp "$PROJECT_DIR/.env.example" "$PROJECT_DIR/.env"
+echo "[deploy] Ensuring production env is preserved..."
+# Strategy:
+# - If .env.prod exists (server-managed), always use it as the source of truth.
+# - Otherwise, create .env from .env.example only if .env is missing.
+if [ -f "$PROJECT_DIR/.env.prod" ]; then
+  cp -f "$PROJECT_DIR/.env.prod" "$PROJECT_DIR/.env"
+else
+  if [ ! -f "$PROJECT_DIR/.env" ] && [ -f "$PROJECT_DIR/.env.example" ]; then
+    cp "$PROJECT_DIR/.env.example" "$PROJECT_DIR/.env"
+  fi
 fi
 
 echo "[deploy] Loading environment (.env if present) for manage.py commands..."
@@ -49,20 +56,15 @@ echo "[deploy] Ensuring systemd can run 'start' (ExecStart=start)..."
 sudo tee /usr/local/bin/start >/dev/null <<EOF
 #!/usr/bin/env bash
 set -e
-
 cd "$PROJECT_DIR"
-
-# Load env for the gunicorn process
 if [ -f "$PROJECT_DIR/.env" ]; then
   set -a
   source "$PROJECT_DIR/.env"
   set +a
 fi
-
 : "\${GUNICORN_BIND:=127.0.0.1:8000}"
 : "\${GUNICORN_WORKERS:=3}"
 : "\${GUNICORN_TIMEOUT:=60}"
-
 exec "$VENV_DIR/bin/gunicorn" peds_edu.wsgi:application \\
   --bind "\$GUNICORN_BIND" \\
   --workers "\$GUNICORN_WORKERS" \\
