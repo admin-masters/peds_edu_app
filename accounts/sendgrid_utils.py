@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 def send_email_via_sendgrid(to_email: str, subject: str, text: str) -> bool:
     api_key = getattr(settings, "SENDGRID_API_KEY", "") or ""
+    key_tail = api_key[-6:] if api_key else "EMPTY"
     from_email = getattr(settings, "SENDGRID_FROM_EMAIL", "") or ""
 
     if not api_key or not from_email:
