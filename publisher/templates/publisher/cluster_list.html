@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+  <h2>Video Bundles</h2>
+
+  <form method="get" style="margin-bottom:12px;">
+    <input name="q" value="{{ q }}" placeholder="Search by code/keywords" />
+    <button type="submit">Search</button>
+    <a href="{% url 'publisher:cluster_create' %}" style="margin-left:12px;">+ New Bundle</a>
+  </form>
+
+  <table border="1" cellpadding="8" cellspacing="0">
+    <tr>
+      <th>Code</th>
+      <th>English Name</th>
+      <th>Trigger</th>
+      <th>Published</th>
+      <th>Action</th>
+    </tr>
+    {% for r in rows %}
+      <tr>
+        <td>{{ r.obj.code }}</td>
+        <td>{{ r.name }}</td>
+        <td>{{ r.trigger }}</td>
+        <td>{{ r.obj.is_published }}</td>
+        <td><a href="{% url 'publisher:cluster_edit' r.obj.pk %}">Edit</a></td>
+      </tr>
+    {% endfor %}
+  </table>
+{% endblock %}
