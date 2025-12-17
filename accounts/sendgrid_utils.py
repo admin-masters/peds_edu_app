@@ -1,6 +1,8 @@
 import logging
 import os
 from pathlib import Path
+import socket
+import ssl as ssl_lib
 
 from django.conf import settings
 from django.core.mail import send_mail
@@ -12,6 +14,18 @@ from .email_log import EmailLog
 logger = logging.getLogger(__name__)
 
 ENV_PATH = Path("/home/ubuntu/peds_edu_app/.env")
+
+
+def _probe_outbound(host: str, port: int, use_ssl: bool) -> str:
+    try:
+        sock = socket.create_connection((host, port), timeout=10)
+        if use_ssl:
+            ctx = ssl_lib.create_default_context()
+            sock = ctx.wrap_socket(sock, server_hostname=host)
+        sock.close()
+        return "tcp_ok" + ("_ssl_ok" if use_ssl else "")
+    except Exception as e:
+        return f"{type(e).__name__}: {str(e)}"
 
 
 def _read_env_var(name: str, default: str = "") -> str:
@@ -58,13 +72,17 @@ def send_email_via_sendgrid(to_email: str, subject: str, text: str) -> bool:
 
     Always logs to EmailLog.
     """
+
     # ---------- SMTP path ----------
     if _smtp_enabled():
         try:
             send_mail(
                 subject=subject,
                 message=text,
-                from_email=getattr(settings, "DEFAULT_FROM_EMAIL", "") or getattr(settings, "SENDGRID_FROM_EMAIL", ""),
+                from_email=(
+                    getattr(settings, "DEFAULT_FROM_EMAIL", "")
+                    or getattr(settings, "SENDGRID_FROM_EMAIL", "")
+                ),
                 recipient_list=[to_email],
                 fail_silently=False,
             )
@@ -78,7 +96,14 @@ def send_email_via_sendgrid(to_email: str, subject: str, text: str) -> bool:
                 error="",
             )
             return True
+
         except Exception as e:
+            host = getattr(settings, "EMAIL_HOST", "")
+            port = int(getattr(settings, "EMAIL_PORT", "587"))
+            use_ssl = bool(getattr(settings, "EMAIL_USE_SSL", False))
+
+            probe = _probe_outbound(host, port, use_ssl)
+
             EmailLog.objects.create(
                 to_email=to_email,
                 subject=subject,
@@ -88,11 +113,12 @@ def send_email_via_sendgrid(to_email: str, subject: str, text: str) -> bool:
                 response_body="",
                 error=(
                     f"{type(e).__name__}: {str(e)} | "
-                    f"host={getattr(settings,'EMAIL_HOST','')} "
-                    f"port={getattr(settings,'EMAIL_PORT','')} "
+                    f"host={host} "
+                    f"port={port} "
                     f"tls={getattr(settings,'EMAIL_USE_TLS','')} "
-                    f"ssl={getattr(settings,'EMAIL_USE_SSL','')} "
-                    f"user={getattr(settings,'EMAIL_HOST_USER','')}"
+                    f"ssl={use_ssl} "
+                    f"user={getattr(settings,'EMAIL_HOST_USER','')} "
+                    f"| probe={probe}"
                 ),
             )
             logger.exception("SMTP send failed")
