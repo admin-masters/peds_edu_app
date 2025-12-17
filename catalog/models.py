@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import re
+from urllib.parse import urlparse, parse_qs
+
 from django.db import models
 from django.utils.text import slugify
 
@@ -92,6 +95,50 @@ class VideoLanguage(models.Model):
 
     title = models.CharField(max_length=255)
     youtube_url = models.CharField(max_length=255)
+
+    _YT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
+
+    @staticmethod
+    def _extract_youtube_id(url: str) -> str:
+        url = (url or "").strip()
+        if not url:
+            return ""
+        if VideoLanguage._YT_ID_RE.match(url):
+            return url
+
+        try:
+            p = urlparse(url)
+        except Exception:
+            return ""
+
+        host = (p.netloc or "").lower()
+        path = (p.path or "").strip("/")
+
+        vid = ""
+
+        # youtu.be/<id>
+        if host.endswith("youtu.be"):
+            vid = path.split("/")[0] if path else ""
+
+        # youtube.com/watch?v=<id>
+        elif "youtube" in host:
+            if path == "watch":
+                vid = (parse_qs(p.query).get("v") or [""])[0]
+            elif path.startswith("embed/"):
+                parts = path.split("/")
+                vid = parts[1] if len(parts) > 1 else ""
+            elif path.startswith("shorts/"):
+                parts = path.split("/")
+                vid = parts[1] if len(parts) > 1 else ""
+
+        return vid if VideoLanguage._YT_ID_RE.match(vid) else ""
+
+    @property
+    def youtube_embed_url(self) -> str:
+        vid = self._extract_youtube_id(self.youtube_url)
+        if not vid:
+            return ""
+        return f"https://www.youtube.com/embed/{vid}"
 
     class Meta:
         unique_together = ("video", "language_code")
