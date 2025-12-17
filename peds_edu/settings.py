@@ -133,33 +133,35 @@ SESSION_COOKIE_AGE = int(env("SESSION_COOKIE_AGE_SECONDS", str(60 * 60 * 24 * 90
 SESSION_EXPIRE_AT_BROWSER_CLOSE = False
 SESSION_SAVE_EVERY_REQUEST = True
 
-# Security (set these to True/secure in production behind HTTPS)
+# Security
 CSRF_COOKIE_SECURE = env("CSRF_COOKIE_SECURE", "0") == "1"
 SESSION_COOKIE_SECURE = env("SESSION_COOKIE_SECURE", "0") == "1"
 SECURE_SSL_REDIRECT = env("SECURE_SSL_REDIRECT", "0") == "1"
 
-# App base URL for email/WhatsApp links
+# App base URL
 APP_BASE_URL = env("APP_BASE_URL", "http://35.154.221.92").rstrip("/")
 
 # SendGrid (Web API)
 SENDGRID_API_KEY = env("SENDGRID_API_KEY", "").strip()
 SENDGRID_FROM_EMAIL = env("SENDGRID_FROM_EMAIL", "products@inditech.co.in").strip()
 
-# SMTP fallback (recommended now)
-# Set EMAIL_BACKEND=smtp in .env to activate.
+# SMTP fallback
 EMAIL_BACKEND_MODE = env("EMAIL_BACKEND", "console").strip().lower()
 
 if EMAIL_BACKEND_MODE == "smtp":
     EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 else:
-    # safe default in non-prod/dev
     EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 
 EMAIL_HOST = env("EMAIL_HOST", "smtp.sendgrid.net")
 EMAIL_PORT = int(env("EMAIL_PORT", "587"))
+
+# ✅ Support both STARTTLS (587) and SSL (465) via env
 EMAIL_USE_TLS = env("EMAIL_USE_TLS", "1") == "1"
+EMAIL_USE_SSL = env("EMAIL_USE_SSL", "0") == "1"
+
 EMAIL_HOST_USER = env("EMAIL_HOST_USER", "apikey")
-EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", SENDGRID_API_KEY)  # default to SendGrid key if not set
+EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", SENDGRID_API_KEY)
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", SENDGRID_FROM_EMAIL)
 
 # Cache
