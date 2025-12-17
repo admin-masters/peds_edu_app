@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+  <h2>Video Trigger Maps</h2>
+
+  <form method="get" style="margin-bottom:12px;">
+    <input name="q" value="{{ q }}" placeholder="Search trigger/video code" />
+    <button type="submit">Search</button>
+    <a href="{% url 'publisher:map_create' %}" style="margin-left:12px;">+ New Map</a>
+  </form>
+
+  <table border="1" cellpadding="8" cellspacing="0">
+    <tr>
+      <th>Trigger</th>
+      <th>Video</th>
+      <th>Primary?</th>
+      <th>Sort</th>
+      <th>Action</th>
+    </tr>
+    {% for m in rows %}
+      <tr>
+        <td>{{ m.trigger.code }}</td>
+        <td>{{ m.video.code }}</td>
+        <td>{{ m.is_primary }}</td>
+        <td>{{ m.sort_order }}</td>
+        <td><a href="{% url 'publisher:map_edit' m.pk %}">Edit</a></td>
+      </tr>
+    {% endfor %}
+  </table>
+{% endblock %}
