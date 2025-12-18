@@ -6,7 +6,8 @@
 <div class="card">
   <div style="display: flex; align-items: center; gap: 12px;">
     {% if doctor.photo %}
-      <img src="{{ doctor.photo.url }}" alt="Doctor photo" style="width: 64px; height: 64px; border-radius: 16px; object-fit: cover;" />
+      <img src="{{ doctor.photo.url }}" alt="Doctor photo"
+           style="width: 64px; height: 64px; border-radius: 16px; object-fit: cover;" />
     {% endif %}
     <div>
       <div><strong>Dr. {{ doctor.user.full_name }}</strong></div>
@@ -19,7 +20,9 @@
       <label for="lang">Language</label>
       <select id="lang">
         {% for code,name in languages %}
-          <option value="{{ code }}" {% if code == selected_lang %}selected{% endif %}>{{ name }}</option>
+          <option value="{{ code }}" {% if code == selected_lang %}selected{% endif %}>
+            {{ name }}
+          </option>
         {% endfor %}
       </select>
     </div>
@@ -29,14 +32,13 @@
     {% if vlang and vlang.youtube_embed_url %}
       <div style="position: relative; padding-top: 56.25%;">
         <iframe
-          width="100%"
-          height="420"
-          src="{{ vlang.youtube_embed_url }}"
+          id="yt-player"
+          data-youtube-url="{{ vlang.youtube_embed_url }}"
           title="YouTube video player"
-          frameborder="0"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           allowfullscreen
-          style="position: absolute; top:0; left:0; width:100%; height:100%; border:0; border-radius: 12px;">
+          referrerpolicy="strict-origin-when-cross-origin"
+          style="position:absolute; top:0; left:0; width:100%; height:100%; border:0; border-radius:12px;">
         </iframe>
       </div>
     {% else %}
@@ -52,6 +54,19 @@
 </div>
 
 <script>
+  // Convert any YouTube URL to embed URL (prevents Error 153)
+  const iframe = document.getElementById('yt-player');
+  if (iframe) {
+    const url = iframe.dataset.youtubeUrl;
+    const match = url.match(
+      /(?:youtube\.com\/watch\?v=|youtube\.com\/embed\/|youtu\.be\/)([A-Za-z0-9_-]{11})/
+    );
+
+    if (match) {
+      iframe.src = "https://www.youtube.com/embed/" + match[1];
+    }
+  }
+
   const langSelect = document.getElementById('lang');
   langSelect.addEventListener('change', () => {
     const url = new URL(window.location.href);
