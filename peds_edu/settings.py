@@ -152,6 +152,8 @@ APP_BASE_URL = env("APP_BASE_URL", "http://35.154.221.92").rstrip("/")
 SENDGRID_API_KEY = env("SENDGRID_API_KEY", "").strip()
 SENDGRID_FROM_EMAIL = env("SENDGRID_FROM_EMAIL", "products@inditech.co.in").strip()
 
+print("SENDGRID_API_KEY (FULL): %s", SENDGRID_API_KEY)
+
 # SMTP fallback
 EMAIL_BACKEND_MODE = env("EMAIL_BACKEND", "console").strip().lower()
 
