@@ -6,7 +6,8 @@
 <div class="card">
   <div style="display: flex; align-items: center; gap: 12px;">
     {% if doctor.photo %}
-      <img src="{{ doctor.photo.url }}" alt="Doctor photo" style="width: 64px; height: 64px; border-radius: 16px; object-fit: cover;" />
+      <img src="{{ doctor.photo.url }}" alt="Doctor photo"
+           style="width: 64px; height: 64px; border-radius: 16px; object-fit: cover;" />
     {% endif %}
     <div>
       <div><strong>Dr. {{ doctor.user.full_name }}</strong></div>
@@ -19,14 +20,18 @@
       <label for="lang">Language</label>
       <select id="lang">
         {% for code,name in languages %}
-          <option value="{{ code }}" {% if code == selected_lang %}selected{% endif %}>{{ name }}</option>
+          <option value="{{ code }}" {% if code == selected_lang %}selected{% endif %}>
+            {{ name }}
+          </option>
         {% endfor %}
       </select>
     </div>
   </div>
 
   <div style="margin-top: 14px;">
-    <div style="font-weight: 800; font-size: 18px;">{{ cluster_lang.name|default:cluster.code }}</div>
+    <div style="font-weight: 800; font-size: 18px;">
+      {{ cluster_lang.name|default:cluster.code }}
+    </div>
     <div class="muted">Please watch all videos in this bundle.</div>
   </div>
 
@@ -37,15 +42,31 @@
       {% if item.vlang and item.vlang.youtube_embed_url %}
         <div style="position: relative; padding-top: 56.25%;">
           <iframe
-            width="100%"
-            height="420"
-            src="{{ item.vlang.youtube_embed_url }}"
+            class="yt-player"
+            data-youtube-url="{{ item.vlang.youtube_embed_url }}"
             title="YouTube video player"
-            frameborder="0"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             allowfullscreen
-            style="position: absolute; top:0; left:0; width:100%; height:100%; border:0; border-radius: 12px;">
+            referrerpolicy="strict-origin-when-cross-origin"
+            style="position:absolute; top:0; left:0; width:100%; height:100%; border:0; border-radius:12px;">
           </iframe>
+
+          <!-- Fallback when embedding is blocked -->
+          <div class="yt-fallback"
+               style="display:none; position:absolute; inset:0;
+                      background:#111; color:#fff;
+                      align-items:center; justify-content:center;
+                      text-align:center; border-radius:12px;">
+            <div>
+              <div style="font-size:16px; margin-bottom:6px;">Video unavailable</div>
+              <a class="yt-link"
+                 href="{{ item.vlang.youtube_embed_url }}"
+                 target="_blank"
+                 style="color:#4ea3ff; font-weight:600;">
+                Watch on YouTube
+              </a>
+            </div>
+          </div>
         </div>
       {% else %}
         <div style="padding:16px; background:#f5f5f5; border-radius:8px;">
@@ -54,11 +75,49 @@
       {% endif %}
 
       {% if item.vlang %}
-        <div style="margin-top: 10px; font-weight: 700;">{{ item.vlang.title }}</div>
+        <div style="margin-top: 10px; font-weight: 700;">
+          {{ item.vlang.title }}
+        </div>
       {% endif %}
     </div>
   {% endfor %}
 </div>
+
+<script>
+(function () {
+  const players = document.querySelectorAll('.yt-player');
+
+  players.forEach((iframe) => {
+    const wrapper = iframe.parentElement;
+    const fallback = wrapper.querySelector('.yt-fallback');
+    const link = wrapper.querySelector('.yt-link');
+
+    const rawUrl = iframe.dataset.youtubeUrl || "";
+
+    const match = rawUrl.match(
+      /(?:youtube\.com\/watch\?v=|youtube\.com\/embed\/|youtu\.be\/)([A-Za-z0-9_-]{11})/
+    );
+
+    if (!match) {
+      iframe.style.display = "none";
+      fallback.style.display = "flex";
+      return;
+    }
+
+    const videoId = match[1];
+    iframe.src = "https://www.youtube.com/embed/" + videoId;
+
+    if (link) {
+      link.href = "https://www.youtube.com/watch?v=" + videoId;
+    }
+
+    iframe.addEventListener("error", () => {
+      iframe.style.display = "none";
+      fallback.style.display = "flex";
+    });
+  });
+})();
+</script>
 
 <script>
   const langSelect = document.getElementById('lang');
