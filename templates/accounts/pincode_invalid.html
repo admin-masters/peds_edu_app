@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Invalid PIN Code{% endblock %}
+{% block header_title %}Invalid PIN Code{% endblock %}
+
+{% block content %}
+<div class="card">
+  <p>The pincode does not exist in the Indian Pincode directory. Re-enter the pincode.</p>
+  <p><a href="{{ return_url }}">Click here to return to the form</a></p>
+</div>
+{% endblock %}
