@@ -1,146 +1,98 @@
+from __future__ import annotations
+
 from django import forms
+from django.core.exceptions import ValidationError
 from django.forms import inlineformset_factory
+from django.forms.models import BaseInlineFormSet
 
-from catalog.models import (
-    Video, VideoLanguage,
-    VideoCluster, VideoClusterLanguage, VideoClusterVideo,
-    VideoTriggerMap,
-    TherapyArea, TriggerCluster, Trigger,
-)
+from catalog.constants import LANGUAGE_CODES
+from catalog.models import TherapyArea, Video, VideoCluster, VideoLanguage, Trigger, TriggerCluster
 
-
-# -----------------------------
-# Therapy / Trigger Forms
-# -----------------------------
 
 class TherapyAreaForm(forms.ModelForm):
     class Meta:
         model = TherapyArea
-        fields = ["code", "display_name", "sort_order", "is_active"]
+        fields = ["code", "display_name", "description", "is_active"]
 
 
-class TriggerClusterForm(forms.ModelForm):
+class VideoClusterForm(forms.ModelForm):
     class Meta:
-        model = TriggerCluster
-        fields = ["code", "display_name", "sort_order", "is_active"]
+        model = VideoCluster
+        fields = ["code", "display_name", "description", "is_active"]
 
-
-class TriggerForm(forms.ModelForm):
-    class Meta:
-        model = Trigger
-        fields = [
-            "code",
-            "cluster",
-            "primary_therapy",
-            "doctor_trigger_label",
-            "subtopic_title",
-            "search_keywords",
-            "is_active",
-        ]
-        widgets = {
-            "search_keywords": forms.Textarea(attrs={"rows": 2}),
-        }
-
-
-# -----------------------------
-# Video Forms
-# -----------------------------
 
 class VideoForm(forms.ModelForm):
     class Meta:
         model = Video
-        fields = [
-            "code", "description", "primary_trigger", "primary_therapy",
-            "duration_seconds", "thumbnail_url", "is_published", "search_keywords"
-        ]
-        widgets = {
-            "description": forms.Textarea(attrs={"rows": 3}),
-            "search_keywords": forms.Textarea(attrs={"rows": 2}),
-        }
+        fields = ["code", "thumbnail_url", "is_active"]
 
 
 class VideoLanguageForm(forms.ModelForm):
     class Meta:
         model = VideoLanguage
         fields = ["language_code", "title", "youtube_url"]
-        widgets = {
-            "title": forms.TextInput(attrs={"style": "width: 100%;"}),
-            "youtube_url": forms.TextInput(attrs={"style": "width: 100%;"}),
-        }
-        help_texts = {
-            "youtube_url": (
-                "Paste any YouTube URL (watch/embed/youtu.be). "
-                "The patient page will embed it automatically."
-            ),
-        }
 
 
-class VideoClusterForm(forms.ModelForm):
-    class Meta:
-        model = VideoCluster
-        fields = [
-            "code", "trigger", "description",
-            "sort_order", "is_published", "search_keywords"
-        ]
-        widgets = {
-            "description": forms.Textarea(attrs={"rows": 3}),
-            "search_keywords": forms.Textarea(attrs={"rows": 2}),
-        }
+class BaseVideoLanguageFormSet(BaseInlineFormSet):
+    """Enforce that all 8 languages are present and have title + URL."""
+
+    def clean(self):
+        super().clean()
+
+        seen = set()
+        missing = set(LANGUAGE_CODES)
+
+        for form in self.forms:
+            # If the form itself is invalid, skip; Django will surface field-level errors.
+            if not hasattr(form, "cleaned_data"):
+                continue
+
+            code = form.cleaned_data.get("language_code")
+            title = (form.cleaned_data.get("title") or "").strip()
+            url = (form.cleaned_data.get("youtube_url") or "").strip()
+
+            if not code:
+                continue
+
+            if code in seen:
+                raise ValidationError(
+                    "Duplicate language detected. Each language must be entered exactly once."
+                )
+
+            seen.add(code)
+            missing.discard(code)
+
+            # Fields are required by the model, but enforce here as well (esp. for edge cases)
+            if not title or not url:
+                raise ValidationError(
+                    "Please provide both Title and YouTube URL for every language."
+                )
+
+        if missing:
+            raise ValidationError(
+                "Please provide Title and YouTube URL for all languages: " + ", ".join(sorted(missing))
+            )
 
 
-class VideoClusterLanguageForm(forms.ModelForm):
-    class Meta:
-        model = VideoClusterLanguage
-        fields = ["language_code", "name"]
-        widgets = {
-            "name": forms.TextInput(attrs={"style": "width: 100%;"})
-        }
-
-
-class VideoClusterVideoForm(forms.ModelForm):
-    class Meta:
-        model = VideoClusterVideo
-        fields = ["video", "sort_order"]
-
-
-class VideoTriggerMapForm(forms.ModelForm):
-    class Meta:
-        model = VideoTriggerMap
-        fields = ["trigger", "video", "is_primary", "sort_order"]
-
-
-# -----------------------------
-# Inline Formsets
-# -----------------------------
-
-def make_video_language_formset(extra: int):
+def make_video_language_formset(extra=0):
     return inlineformset_factory(
         Video,
         VideoLanguage,
         form=VideoLanguageForm,
+        formset=BaseVideoLanguageFormSet,
         fields=["language_code", "title", "youtube_url"],
         extra=extra,
-        can_delete=True,
+        can_delete=False,
     )
 
 
-def make_cluster_language_formset(extra: int):
-    return inlineformset_factory(
-        VideoCluster,
-        VideoClusterLanguage,
-        form=VideoClusterLanguageForm,
-        fields=["language_code", "name"],
-        extra=extra,
-        can_delete=True,
-    )
+class TriggerForm(forms.ModelForm):
+    class Meta:
+        model = Trigger
+        fields = ["display_name", "primary_therapy", "is_active"]
 
 
-def make_cluster_video_formset(extra: int):
-    return inlineformset_factory(
-        VideoCluster,
-        VideoClusterVideo,
-        form=VideoClusterVideoForm,
-        fields=["video", "sort_order"],
-        extra=extra,
-        can_delete=True,
-    )
+class TriggerClusterForm(forms.ModelForm):
+    class Meta:
+        model = TriggerCluster
+        fields = ["display_name", "language_code", "is_active"]
