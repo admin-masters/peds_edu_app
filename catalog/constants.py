@@ -1,12 +1,12 @@
 LANGUAGES = [
     ("en", "English"),
-    ("hi", "Hindi"),
-    ("te", "Telugu"),
-    ("ml", "Malayalam"),
-    ("mr", "Marathi"),
-    ("kn", "Kannada"),
-    ("ta", "Tamil"),
-    ("bn", "Bengali"),
+    ("hi", "हिन्दी"),
+    ("te", "తెలుగు"),
+    ("ml", "മലയാളം"),
+    ("mr", "मराठी"),
+    ("kn", "ಕನ್ನಡ"),
+    ("ta", "தமிழ்"),
+    ("bn", "বাংলা"),
 ]
 
 LANGUAGE_CODES = [c for c, _ in LANGUAGES]
