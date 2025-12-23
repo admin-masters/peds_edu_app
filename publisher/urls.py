@@ -26,7 +26,7 @@ urlpatterns = [
     path("videos/new/", views.video_create, name="video_create"),
     path("videos/<int:pk>/", views.video_edit, name="video_edit"),
 
-    # Bundles
+    # Bundles (Video Clusters)
     path("bundles/", views.cluster_list, name="cluster_list"),
     path("bundles/new/", views.cluster_create, name="cluster_create"),
     path("bundles/<int:pk>/", views.cluster_edit, name="cluster_edit"),
