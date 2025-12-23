@@ -15,9 +15,9 @@ from .models import (
 
 @admin.register(TriggerCluster)
 class TriggerClusterAdmin(admin.ModelAdmin):
-    list_display = ("code", "display_name", "sort_order", "is_active")
+    list_display = ("display_name", "language_code", "sort_order", "is_active")
     list_editable = ("sort_order", "is_active")
-    search_fields = ("code", "display_name")
+    search_fields = ("display_name",)
 
 
 @admin.register(TherapyArea)
@@ -29,9 +29,9 @@ class TherapyAreaAdmin(admin.ModelAdmin):
 
 @admin.register(Trigger)
 class TriggerAdmin(admin.ModelAdmin):
-    list_display = ("code", "doctor_trigger_label", "cluster", "primary_therapy", "is_active")
-    list_filter = ("cluster", "primary_therapy", "is_active")
-    search_fields = ("code", "doctor_trigger_label", "subtopic_title", "search_keywords")
+    list_display = ("display_name", "primary_therapy", "is_active", "sort_order")
+    list_filter = ("primary_therapy", "is_active")
+    search_fields = ("display_name",)
 
 
 class VideoLanguageInline(admin.TabularInline):
@@ -41,9 +41,9 @@ class VideoLanguageInline(admin.TabularInline):
 
 @admin.register(Video)
 class VideoAdmin(admin.ModelAdmin):
-    list_display = ("code", "primary_trigger", "is_published")
-    list_filter = ("is_published",)
-    search_fields = ("code", "search_keywords")
+    list_display = ("code", "is_active", "sort_order")
+    list_filter = ("is_active",)
+    search_fields = ("code",)
     inlines = [VideoLanguageInline]
 
 
@@ -59,9 +59,9 @@ class VideoClusterVideoInline(admin.TabularInline):
 
 @admin.register(VideoCluster)
 class VideoClusterAdmin(admin.ModelAdmin):
-    list_display = ("code", "trigger", "sort_order", "is_published")
-    list_filter = ("is_published", "trigger")
-    search_fields = ("code", "search_keywords")
+    list_display = ("code", "sort_order", "is_active")
+    list_filter = ("is_active",)
+    search_fields = ("code",)
     inlines = [VideoClusterLanguageInline, VideoClusterVideoInline]
 
 
@@ -69,4 +69,4 @@ class VideoClusterAdmin(admin.ModelAdmin):
 class VideoTriggerMapAdmin(admin.ModelAdmin):
     list_display = ("video", "trigger", "is_primary", "sort_order")
     list_filter = ("is_primary",)
-    search_fields = ("video__code", "trigger__code")
+    search_fields = ("video__code", "trigger__display_name")
