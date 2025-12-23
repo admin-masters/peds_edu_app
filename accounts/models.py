@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 import re
 import secrets
 import string
@@ -8,6 +7,7 @@ import string
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.core.validators import RegexValidator
 from django.db import models
+from django.utils import timezone
 
 
 INDIA_STATES_AND_UTS = [
@@ -89,6 +89,9 @@ class User(AbstractBaseUser, PermissionsMixin):
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
 
+    # ✅ FIX: DB expects this column; ensure ORM always sends a value on INSERT.
+    date_joined = models.DateTimeField(default=timezone.now)
+
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []
 
@@ -117,6 +120,14 @@ class Clinic(models.Model):
     address_text = models.TextField()
     postal_code = models.CharField(max_length=6, blank=True)
     state = models.CharField(max_length=64, choices=INDIA_STATE_CHOICES)
+
+    @property
+    def clinic_code(self) -> str:
+        """
+        Some parts of the code expect clinic.clinic_code.
+        If you are not storing a clinic_code column in DB, we generate a stable readable code from id.
+        """
+        return f"CLN-{self.pk:04d}" if self.pk else ""
 
     def __str__(self):
         return self.display_name or f"Clinic #{self.pk}"
@@ -147,5 +158,3 @@ class DoctorProfile(models.Model):
 
     def __str__(self):
         return f"{self.user.full_name or self.user.email} ({self.doctor_id})"
-
-
