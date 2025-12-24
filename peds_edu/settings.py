@@ -5,19 +5,25 @@ Configuration is done primarily via environment variables.
 """
 
 from __future__ import annotations
+
+import json
 import os
 from pathlib import Path
+
 from dotenv import load_dotenv
+
 from .aws_secrets import get_secret_string  # Optional fallback for secrets
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
+
 
 def env(name: str, default: str | None = None) -> str:
     value = os.getenv(name, default)
     if value is None:
         raise RuntimeError(f"Missing required env var: {name}")
     return value
+
 
 SECRET_KEY = env("DJANGO_SECRET_KEY", "dev-insecure-change-me")
 DEBUG = env("DJANGO_DEBUG", "1") == "1"
@@ -31,7 +37,6 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-
     "accounts.apps.AccountsConfig",
     "catalog.apps.CatalogConfig",
     "sharing.apps.SharingConfig",
@@ -131,11 +136,49 @@ SECURE_SSL_REDIRECT = env("SECURE_SSL_REDIRECT", "0") == "1"
 # ---------------- APP BASE URL ----------------
 APP_BASE_URL = env("APP_BASE_URL", "https://portal.cpdinclinic.co.in").rstrip("/")
 SITE_BASE_URL = APP_BASE_URL
+
 # ---------------- EMAIL / SENDGRID ----------------
+
+def _extract_sendgrid_key_from_secret(secret_raw: str) -> str:
+    """
+    Your AWS secret may be:
+      - raw key string "SG...."
+      - JSON string like {"SendGrid_email":"SG...."} (your sample)
+      - JSON string like {"SENDGRID_API_KEY":"SG...."} or other variants
+    """
+    raw = (secret_raw or "").strip()
+    if not raw:
+        return ""
+
+    if raw.startswith("{") and raw.endswith("}"):
+        try:
+            obj = json.loads(raw)
+            if isinstance(obj, dict):
+                # Support your sample key name plus other common ones
+                for k in (
+                    "SendGrid_email",
+                    "sendgrid_email",
+                    "SENDGRID_API_KEY",
+                    "sendgrid_api_key",
+                    "api_key",
+                    "apikey",
+                    "key",
+                ):
+                    v = obj.get(k)
+                    if isinstance(v, str) and v.strip():
+                        return v.strip()
+        except Exception:
+            # If JSON parse fails, fall back to treating it as raw key
+            pass
+
+    return raw
+
+
 SENDGRID_API_KEY = env("SENDGRID_API_KEY", "").strip()
 if not SENDGRID_API_KEY:
     # Optional fallback via AWS Secrets Manager
-    SENDGRID_API_KEY = (get_secret_string("SendGrid_API", region_name="ap-south-1") or "").strip()
+    secret_raw = (get_secret_string("SendGrid_API", region_name="ap-south-1") or "").strip()
+    SENDGRID_API_KEY = _extract_sendgrid_key_from_secret(secret_raw)
 
 SENDGRID_FROM_EMAIL = env("SENDGRID_FROM_EMAIL", "products@inditech.co.in").strip()
 EMAIL_BACKEND_MODE = env("EMAIL_BACKEND_MODE", "smtp").strip().lower()
