@@ -1,11 +1,17 @@
 Django>=4.2,<5.0
 mysqlclient>=2.2
+
+# Email
 sendgrid>=6.11
-whitenoise>=6.6
-gunicorn>=21.2
-Pillow>=10.0
-# Optional (recommended for Redis cache):
-django-redis>=5.4
-python-dotenv>=1.0
 boto3>=1.34
 
+# Web serving / assets
+whitenoise>=6.7
+gunicorn>=21.2
+Pillow>=10.0
+
+# Cache
+django-redis>=5.4
+
+# Env
+python-dotenv>=1.0
