@@ -11,17 +11,20 @@
   <table border="1" cellpadding="8" cellspacing="0">
     <tr>
       <th>Code</th>
-      <th>English Title</th>
       <th>Published</th>
+      <th>Active</th>
       <th>Action</th>
     </tr>
+
     {% for r in rows %}
       <tr>
-        <td>{{ r.obj.code }}</td>
-        <td>{{ r.title }}</td>
-        <td>{{ r.obj.is_published }}</td>
-        <td><a href="{% url 'publisher:video_edit' r.obj.pk %}">Edit</a></td>
+        <td>{{ r.code }}</td>
+        <td>{{ r.is_published }}</td>
+        <td>{{ r.is_active }}</td>
+        <td><a href="{% url 'publisher:video_edit' r.pk %}">Edit</a></td>
       </tr>
+    {% empty %}
+      <tr><td colspan="4">No videos found.</td></tr>
     {% endfor %}
   </table>
 {% endblock %}
