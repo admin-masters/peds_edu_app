@@ -129,8 +129,23 @@
 </style>
 
 {{ catalog_json|json_script:"catalog-json" }}
+
 <script>
-  const catalog = JSON.parse(document.getElementById("catalog-json").textContent);
+  let catalog = JSON.parse(document.getElementById("catalog-json").textContent);
+
+  // If someone accidentally passes a JSON *string* again, recover
+  if (typeof catalog === "string") {
+    try { catalog = JSON.parse(catalog); } catch (e) {}
+  }
+
+  if (!catalog || typeof catalog !== "object") {
+    catalog = { clusters: [], videos: [], message_prefixes: {} };
+  }
+
+  catalog.clusters = Array.isArray(catalog.clusters) ? catalog.clusters : [];
+  catalog.videos = Array.isArray(catalog.videos) ? catalog.videos : [];
+  catalog.message_prefixes = catalog.message_prefixes || {};
+
   const chipsEl = document.getElementById("clusterChips");
   const listEl = document.getElementById("videoList");
   const searchBox = document.getElementById("searchBox");
@@ -148,7 +163,13 @@
       b.type = "button";
       b.className = "chip" + (activeCluster===c.id ? " active":"");
       b.textContent = c.display_name;
-      b.onclick = ()=>{ activeCluster = c.id; activeVideoId=null; renderChips(); renderVideos(); updateShareEnabled(); };
+      b.onclick = ()=>{
+        activeCluster = c.id;
+        activeVideoId = null;
+        renderChips();
+        renderVideos();
+        updateShareEnabled();
+      };
       chipsEl.appendChild(b);
     });
   }
@@ -163,7 +184,10 @@
     }
 
     if(q){
-      vids = vids.filter(v => (v.titles[lang]||"").toLowerCase().includes(q) || (v.search_text||"").toLowerCase().includes(q));
+      vids = vids.filter(v =>
+        (v.titles[lang]||"").toLowerCase().includes(q) ||
+        (v.search_text||"").toLowerCase().includes(q)
+      );
     }
     return vids;
   }
@@ -172,6 +196,7 @@
     const lang = langSel.value;
     const vids = getFilteredVideos();
     listEl.innerHTML = "";
+
     if(!vids.length){
       listEl.innerHTML = "<div class='muted'>No videos found.</div>";
       return;
@@ -180,7 +205,11 @@
     vids.forEach(v=>{
       const d = document.createElement("div");
       d.className = "video-item" + (activeVideoId===v.id ? " active":"");
-      d.onclick = ()=>{ activeVideoId = v.id; renderVideos(); updateShareEnabled(); };
+      d.onclick = ()=>{
+        activeVideoId = v.id;
+        renderVideos();
+        updateShareEnabled();
+      };
       d.innerHTML = `
         <div class="video-title">${(v.titles[lang]||v.titles["en"]||"Untitled")}</div>
         <div class="video-meta">${v.trigger_names.join(", ")}</div>
