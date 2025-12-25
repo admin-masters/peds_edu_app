@@ -25,9 +25,13 @@ def doctor_share(request: HttpRequest, doctor_id: str) -> HttpResponse:
     if not doctor or doctor.doctor_id != doctor_id:
         return HttpResponseForbidden("Not allowed")
 
-    # Force refresh once to avoid stale/empty cache during development.
     catalog_json = get_catalog_json_cached(force_refresh=True)
-    message_prefixes = build_whatsapp_message_prefixes(request.user.full_name)
+
+    # Make message prefixes doctor-specific (template uses catalog.message_prefixes)
+    catalog_json = {
+        **catalog_json,
+        "message_prefixes": build_whatsapp_message_prefixes(doctor.full_name),
+    }
 
     return render(
         request,
@@ -35,7 +39,6 @@ def doctor_share(request: HttpRequest, doctor_id: str) -> HttpResponse:
         {
             "doctor": doctor,
             "catalog_json": catalog_json,
-            "message_prefixes": message_prefixes,
             "languages": LANGUAGES,
         },
     )
