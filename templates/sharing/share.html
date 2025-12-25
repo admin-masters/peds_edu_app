@@ -5,11 +5,25 @@
 {% block content %}
 <div class="card">
   <div style="display:flex; gap:14px; align-items:flex-start;">
-    <div>
+    <div style="width:180px;">
       {% if doctor.photo %}
-        <img src="{{ doctor.photo.url }}" alt="Doctor photo" style="width:72px; height:72px; border-radius:16px; object-fit:cover;">
+        <img
+          id="doctorPhoto"
+          src="{{ doctor.photo.url }}"
+          alt="Doctor photo"
+          style="width:140px; height:140px; border-radius:14px; object-fit:cover;"
+          onerror="this.style.display='none'; document.getElementById('doctorPhotoFallback').style.display='flex';"
+        >
+        <div
+          id="doctorPhotoFallback"
+          class="avatar-placeholder"
+          style="display:none; width:140px; height:140px; border-radius:14px; align-items:center; justify-content:center; font-size:48px; font-weight:700; background:#f1f5f9;"
+        >
+          {{ doctor.user.full_name|default:doctor.user.email|slice:":1"|upper }}
+        </div>
       {% else %}
-        <div style="width:72px; height:72px; border-radius:16px; background:#e5e7eb; display:flex; align-items:center; justify-content:center; color:#6b7280; font-weight:700;">
+        <div class="avatar-placeholder"
+             style="width:140px; height:140px; border-radius:14px; display:flex; align-items:center; justify-content:center; font-size:48px; font-weight:700; background:#f1f5f9;">
           {{ doctor.user.full_name|default:doctor.user.email|slice:":1"|upper }}
         </div>
       {% endif %}
@@ -133,7 +147,6 @@
 <script>
   let catalog = JSON.parse(document.getElementById("catalog-json").textContent);
 
-  // If someone accidentally passes a JSON *string* again, recover
   if (typeof catalog === "string") {
     try { catalog = JSON.parse(catalog); } catch (e) {}
   }
@@ -246,7 +259,6 @@
   langSel.addEventListener("change", ()=>{ renderVideos(); updateShareEnabled(); });
   waNumber.addEventListener("input", updateShareEnabled);
 
-  // Init
   activeCluster = catalog.clusters.length ? catalog.clusters[0].id : null;
   renderChips();
   renderVideos();
