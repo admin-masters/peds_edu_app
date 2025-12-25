@@ -1,267 +1,128 @@
-{% extends "base.html" %}
-{% block title %}Doctor Share{% endblock %}
-{% block header_title %}Doctor Share{% endblock %}
+from __future__ import annotations
 
-{% block content %}
-<div class="card">
-  <div style="display:flex; gap:14px; align-items:flex-start;">
-    <div style="width:180px;">
-      {% if doctor.photo %}
-        <img
-          id="doctorPhoto"
-          src="{{ doctor.photo.url }}"
-          alt="Doctor photo"
-          style="width:140px; height:140px; border-radius:14px; object-fit:cover;"
-          onerror="this.style.display='none'; document.getElementById('doctorPhotoFallback').style.display='flex';"
-        >
-        <div
-          id="doctorPhotoFallback"
-          class="avatar-placeholder"
-          style="display:none; width:140px; height:140px; border-radius:14px; align-items:center; justify-content:center; font-size:48px; font-weight:700; background:#f1f5f9;"
-        >
-          {{ doctor.user.full_name|default:doctor.user.email|slice:":1"|upper }}
-        </div>
-      {% else %}
-        <div class="avatar-placeholder"
-             style="width:140px; height:140px; border-radius:14px; display:flex; align-items:center; justify-content:center; font-size:48px; font-weight:700; background:#f1f5f9;">
-          {{ doctor.user.full_name|default:doctor.user.email|slice:":1"|upper }}
-        </div>
-      {% endif %}
-    </div>
+from django.contrib.auth.decorators import login_required
+from django.http import HttpRequest, HttpResponse, HttpResponseForbidden
+from django.shortcuts import get_object_or_404, redirect, render
 
-    <div style="flex:1;">
-      <div class="row two">
-        <div>
-          <h3>Doctor</h3>
-          <p><b>{{ doctor.user.full_name }}</b></p>
-          <p class="muted">Doctor ID: {{ doctor.doctor_id }}</p>
-          <p class="muted">WhatsApp: {{ doctor.whatsapp_number }}</p>
-        </div>
+from accounts.models import DoctorProfile
+from catalog.constants import LANGUAGE_CODES, LANGUAGES
+from catalog.models import Video, VideoLanguage, VideoCluster
 
-        <div>
-          <h3>Clinic</h3>
-          <p><b>{{ doctor.clinic.display_name }}</b></p>
-          <p class="muted">Phone: {{ doctor.clinic.clinic_phone }}</p>
-          {% if doctor.clinic.clinic_whatsapp_number %}
-            <p class="muted">WhatsApp: {{ doctor.clinic.clinic_whatsapp_number }}</p>
-          {% endif %}
-          <p class="muted">{{ doctor.clinic.address_text }}</p>
-          <p class="muted">Postal Code: {{ doctor.postal_code|default:doctor.clinic.postal_code }}</p>
-          <p class="muted">State: {{ doctor.clinic.state }}</p>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
+from .services import build_whatsapp_message_prefixes, get_catalog_json_cached
 
-<div class="card">
-  <h3>Select Video &amp; Language</h3>
 
-  <div class="row two">
-    <div>
-      <label>Search videos</label>
-      <input id="searchBox" type="text" placeholder="Type to search...">
-    </div>
+@login_required
+def home(request: HttpRequest) -> HttpResponse:
+    doctor = getattr(request.user, "doctor_profile", None)
+    if not doctor:
+        return redirect("accounts:logout")
+    return redirect("sharing:doctor_share", doctor_id=doctor.doctor_id)
 
-    <div>
-      <label>Language</label>
-      <select id="lang">
-        {% for code, name in languages %}
-          <option value="{{ code }}">{{ name }}</option>
-        {% endfor %}
-      </select>
-    </div>
-  </div>
 
-  <div style="margin-top:12px;">
-    <div class="chips" id="clusterChips"></div>
-  </div>
+@login_required
+def doctor_share(request: HttpRequest, doctor_id: str) -> HttpResponse:
+    doctor = getattr(request.user, "doctor_profile", None)
+    if not doctor or doctor.doctor_id != doctor_id:
+        return HttpResponseForbidden("Not allowed")
 
-  <div style="margin-top:12px;" class="muted">
-    Select a video, then share the link via WhatsApp below.
-  </div>
+    # Force refresh once to avoid stale/empty cache during development.
+    catalog_json = get_catalog_json_cached(force_refresh=True)
 
-  <div style="margin-top:12px;" id="videoList"></div>
+    # ✅ DoctorProfile has no full_name. Name lives on the related User.
+    doctor_name = ""
+    try:
+        doctor_name = (doctor.user.full_name or "").strip()
+    except Exception:
+        doctor_name = (request.user.full_name or "").strip()
 
-  <div class="sticky-share">
-    <h3 style="margin:0 0 8px 0;">Share</h3>
+    message_prefixes = build_whatsapp_message_prefixes(doctor_name)
 
-    <label>WhatsApp number- 10 digits</label>
-    <input id="waNumber" type="tel" maxlength="10" placeholder="Enter patient's WhatsApp number" pattern="\d{10}">
+    return render(
+        request,
+        "sharing/share.html",
+        {
+            "doctor": doctor,
+            "catalog_json": catalog_json,
+            "message_prefixes": message_prefixes,
+            "languages": LANGUAGES,
+        },
+    )
 
-    <button id="shareBtn" disabled>Share Selected Video</button>
-    <div class="muted" style="font-size:12px; margin-top:6px;">We will open WhatsApp with a prefilled message.</div>
-  </div>
-</div>
 
-<div class="card" style="margin-top: 12px; text-align:center;">
-  <a href="{% url 'accounts:modify_clinic_details' doctor.doctor_id %}"
-     style="display:inline-block; padding:12px 16px; border-radius:14px; background:#111827; color:#ffffff; text-decoration:none; font-weight:600;">
-    Modify Clinic Details
-  </a>
-</div>
+def patient_video(request: HttpRequest, doctor_id: str, video_code: str) -> HttpResponse:
+    doctor = get_object_or_404(DoctorProfile.objects.select_related("clinic", "user"), doctor_id=doctor_id)
 
-<style>
-  .chips{display:flex; flex-wrap:wrap; gap:8px;}
-  .chip{
-    padding:8px 10px;
-    border-radius:999px;
-    border:1px solid #d1d5db;
-    background:#f3f4f6;
-    color:#111827;
-    cursor:pointer;
-    font-size:13px;
-    font-weight:600;
-  }
-  .chip.active{
-    background:#111827;
-    color:#ffffff;
-    border-color:#111827;
-  }
-  .chip:hover{
-    background:#e5e7eb;
-  }
+    lang = request.GET.get("lang", "en")
+    if lang not in LANGUAGE_CODES:
+        lang = "en"
 
-  .video-item{
-    padding:10px;
-    border:1px solid #e5e7eb;
-    border-radius:12px;
-    margin-bottom:8px;
-    cursor:pointer;
-  }
-  .video-item.active{
-    border-color:#111827;
-    box-shadow:0 0 0 2px rgba(17,24,39,0.12);
-  }
-  .video-title{font-weight:700;}
-  .video-meta{font-size:12px; color:#6b7280;}
-  .sticky-share{
-    margin-top:14px;
-    padding-top:12px;
-    border-top:1px solid #e5e7eb;
-  }
-</style>
+    video = get_object_or_404(Video, code=video_code)
 
-{{ catalog_json|json_script:"catalog-json" }}
+    vlang = (
+        VideoLanguage.objects.filter(video=video, language_code=lang).first()
+        or VideoLanguage.objects.filter(video=video, language_code="en").first()
+    )
 
-<script>
-  let catalog = JSON.parse(document.getElementById("catalog-json").textContent);
+    return render(
+        request,
+        "sharing/patient_video.html",
+        {
+            "doctor": doctor,
+            "clinic": doctor.clinic,
+            "video": video,
+            "vlang": vlang,
+            "languages": LANGUAGES,
+            "selected_lang": lang,
+        },
+    )
 
-  if (typeof catalog === "string") {
-    try { catalog = JSON.parse(catalog); } catch (e) {}
-  }
 
-  if (!catalog || typeof catalog !== "object") {
-    catalog = { clusters: [], videos: [], message_prefixes: {} };
-  }
+def patient_cluster(request: HttpRequest, doctor_id: str, cluster_code: str) -> HttpResponse:
+    doctor = get_object_or_404(DoctorProfile.objects.select_related("clinic", "user"), doctor_id=doctor_id)
 
-  catalog.clusters = Array.isArray(catalog.clusters) ? catalog.clusters : [];
-  catalog.videos = Array.isArray(catalog.videos) ? catalog.videos : [];
-  catalog.message_prefixes = catalog.message_prefixes || {};
+    lang = request.GET.get("lang", "en")
+    if lang not in LANGUAGE_CODES:
+        lang = "en"
 
-  const chipsEl = document.getElementById("clusterChips");
-  const listEl = document.getElementById("videoList");
-  const searchBox = document.getElementById("searchBox");
-  const langSel = document.getElementById("lang");
-  const waNumber = document.getElementById("waNumber");
-  const shareBtn = document.getElementById("shareBtn");
+    cluster = None
+    try:
+        cluster = VideoCluster.objects.filter(code=cluster_code).first()
+    except Exception:
+        cluster = None
 
-  let activeCluster = null;
-  let activeVideoId = null;
+    if cluster is None and cluster_code.isdigit():
+        cluster = get_object_or_404(VideoCluster, pk=int(cluster_code))
+    elif cluster is None:
+        cluster = get_object_or_404(VideoCluster, pk=-1)
 
-  function renderChips(){
-    chipsEl.innerHTML = "";
-    catalog.clusters.forEach(c=>{
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "chip" + (activeCluster===c.id ? " active":"");
-      b.textContent = c.display_name;
-      b.onclick = ()=>{
-        activeCluster = c.id;
-        activeVideoId = null;
-        renderChips();
-        renderVideos();
-        updateShareEnabled();
-      };
-      chipsEl.appendChild(b);
-    });
-  }
+    try:
+        videos = cluster.videos.all().order_by("sort_order", "id")
+    except Exception:
+        videos = cluster.videos.all().order_by("id")
 
-  function getFilteredVideos(){
-    const q = (searchBox.value||"").toLowerCase();
-    const lang = langSel.value;
-    let vids = catalog.videos;
+    items = []
+    for v in videos:
+        vlang = (
+            VideoLanguage.objects.filter(video=v, language_code=lang).first()
+            or VideoLanguage.objects.filter(video=v, language_code="en").first()
+        )
+        items.append(
+            {
+                "video": v,
+                "title": (vlang.title if vlang else v.code),
+                "url": (vlang.youtube_url if vlang else ""),
+            }
+        )
 
-    if(activeCluster){
-      vids = vids.filter(v => v.cluster_ids.includes(activeCluster));
-    }
-
-    if(q){
-      vids = vids.filter(v =>
-        (v.titles[lang]||"").toLowerCase().includes(q) ||
-        (v.search_text||"").toLowerCase().includes(q)
-      );
-    }
-    return vids;
-  }
-
-  function renderVideos(){
-    const lang = langSel.value;
-    const vids = getFilteredVideos();
-    listEl.innerHTML = "";
-
-    if(!vids.length){
-      listEl.innerHTML = "<div class='muted'>No videos found.</div>";
-      return;
-    }
-
-    vids.forEach(v=>{
-      const d = document.createElement("div");
-      d.className = "video-item" + (activeVideoId===v.id ? " active":"");
-      d.onclick = ()=>{
-        activeVideoId = v.id;
-        renderVideos();
-        updateShareEnabled();
-      };
-      d.innerHTML = `
-        <div class="video-title">${(v.titles[lang]||v.titles["en"]||"Untitled")}</div>
-        <div class="video-meta">${v.trigger_names.join(", ")}</div>
-      `;
-      listEl.appendChild(d);
-    });
-  }
-
-  function updateShareEnabled(){
-    const okVideo = !!activeVideoId;
-    const okWa = /^\d{10}$/.test((waNumber.value||"").trim());
-    shareBtn.disabled = !(okVideo && okWa);
-  }
-
-  function buildShareMessage(video, lang){
-    const title = (video.titles[lang] || video.titles["en"] || "Video");
-    const url = video.urls[lang] || video.urls["en"];
-    const prefix = catalog.message_prefixes[lang] || catalog.message_prefixes["en"] || "";
-    return `${prefix}${title}\n${url}`;
-  }
-
-  shareBtn.onclick = ()=>{
-    const lang = langSel.value;
-    const video = catalog.videos.find(v=>v.id===activeVideoId);
-    if(!video) return;
-
-    const wa = waNumber.value.trim();
-    const msg = buildShareMessage(video, lang);
-    const waUrl = `https://wa.me/91${wa}?text=${encodeURIComponent(msg)}`;
-    window.open(waUrl, "_blank");
-  };
-
-  searchBox.addEventListener("input", ()=>{ renderVideos(); updateShareEnabled(); });
-  langSel.addEventListener("change", ()=>{ renderVideos(); updateShareEnabled(); });
-  waNumber.addEventListener("input", updateShareEnabled);
-
-  activeCluster = catalog.clusters.length ? catalog.clusters[0].id : null;
-  renderChips();
-  renderVideos();
-  updateShareEnabled();
-</script>
-{% endblock %}
+    return render(
+        request,
+        "sharing/patient_cluster.html",
+        {
+            "doctor": doctor,
+            "clinic": doctor.clinic,
+            "cluster": cluster,
+            "items": items,
+            "languages": LANGUAGES,
+            "selected_lang": lang,
+        },
+    )
