@@ -13,29 +13,23 @@ from catalog.models import (
     Trigger,
     TriggerCluster,
     Video,
+    VideoLanguage,
     VideoCluster,
     VideoClusterLanguage,
     VideoClusterVideo,
 )
 
-# Bump cache key to invalidate old payload
+
 _CATALOG_CACHE_KEY = "clinic_catalog_payload_v6"
-_CATALOG_CACHE_SECONDS = 15 * 60  # 15 min
+_CATALOG_CACHE_SECONDS = 60 * 60  # 1 hour
 
 
-def _safe_str(v: Any) -> str:
-    return "" if v is None else str(v)
-
-
-# ---------------------------------------------------------------------
-# WhatsApp message prefixes (NO caching of doctor-specific text)
-# ---------------------------------------------------------------------
-def build_whatsapp_message_prefixes(
-    doctor_name: Optional[str] = None,
-) -> Dict[str, str]:
-    doctor = (doctor_name or "").strip()
-    dn_en = doctor if doctor else "your doctor"
-    dn_local = doctor if doctor else ""
+def build_whatsapp_message_prefixes(doctor_name: str) -> Dict[str, str]:
+    """
+    Generates WhatsApp prefix strings for each supported language.
+    Final message is: prefix + patient_link
+    """
+    doctor = doctor_name.strip() or "your doctor"
 
     templates = {
         "en": (
@@ -50,23 +44,17 @@ def build_whatsapp_message_prefixes(
             "क्योंकि ये आपके डॉक्टर के महत्वपूर्ण निरीक्षणों के लिए हैं। "
             "आपके बच्चे का स्वास्थ्य और भलाई इन वीडियो में दिए गए निर्देशों का पालन करने पर निर्भर है। "
         ),
-        "te": (
-            "మీ డాక్టర్ {doctor} మీకు క్రింది వీడియో/వీడియోలను పంపించారు. "
-            "దయచేసి వాటిని జాగ్రత్తగా వీక్షించి, వీడియోలలో ఇచ్చిన సూచనలను అనుసరించండి, "
-            "ఎందుకంటే ఇవి మీ డాక్టర్ చేసిన ముఖ్యమైన పరిశీలనల కోసం. "
-            "మీ పిల్లల ఆరోగ్యం మరియు శ్రేయస్సు ఈ వీడియోల సూచనలను అనుసరించడంపై ఆధారపడి ఉంటుంది. "
-        ),
-        "ml": (
-            "നിങ്ങളുടെ ഡോക്ടർ {doctor} നിങ്ങള്‍ക്കായി താഴെ പറയുന്ന വീഡിയോ/വീഡിയോകള്‍ അയച്ചിട്ടുണ്ട്. "
-            "ദയവായി അവ ശ്രദ്ധാപൂർവ്വം കാണുകയും വീഡിയോയിലെ നിർദ്ദേശങ്ങൾ പാലിക്കുകയും ചെയ്യുക, "
-            "കാരണം ഇവ നിങ്ങളുടെ ഡോക്ടറുടെ പ്രധാനപ്പെട്ട നിരീക്ഷണങ്ങൾക്കായാണ്. "
-            "നിങ്ങളുടെ കുട്ടിയുടെ ആരോഗ്യവും ക്ഷേമവും വീഡിയോയിലെ നിർദ്ദേശങ്ങൾ പാലിക്കുന്നതിനെ ആശ്രയിച്ചിരിക്കുന്നു. "
+        "gu": (
+            "તમારા ડોક્ટર {doctor} એ તમને નીચેના વિડિયો/વિડિયો મોકલ્યા છે. "
+            "કૃપા કરીને તેને ધ્યાનથી જુઓ અને વિડિયોમાં આપેલા સૂચનોનું પાલન કરો, "
+            "કારણ કે આ તમારા ડોક્ટરના મહત્વના નિરીક્ષણો માટે છે. "
+            "તમારા બાળકનું સ્વાસ્થ્ય અને કલ્યાણ વિડિયોમાં આપેલા સૂચનોનું પાલન કરવા પર આધાર રાખે છે. "
         ),
         "mr": (
-            "आपल्या डॉक्टर {doctor} यांनी आपल्याला खालील व्हिडिओ/व्हिडिओ पाठवले आहेत. "
-            "कृपया ते काळजीपूर्वक पाहा आणि व्हिडिओमध्ये दिलेल्या सूचनांचे पालन करा, "
-            "कारण हे आपल्या डॉक्टरांच्या महत्त्वाच्या निरीक्षणांसाठी आहेत. "
-            "आपल्या मुलाचे आरोग्य आणि कल्याण हे व्हिडिओमधील सूचनांचे पालन करण्यावर अवलंबून आहे. "
+            "तुमचे डॉक्टर {doctor} यांनी तुम्हाला खालील व्हिडिओ/व्हिडिओ पाठवले आहेत. "
+            "कृपया ते काळजीपूर्वक पहा आणि व्हिडिओमध्ये दिलेल्या सूचनांचे पालन करा, "
+            "कारण हे तुमच्या डॉक्टरांच्या महत्त्वाच्या निरीक्षणांसाठी आहेत. "
+            "तुमच्या मुलाचे आरोग्य आणि कल्याण व्हिडिओमधील सूचनांचे पालन करण्यावर अवलंबून आहे. "
         ),
         "kn": (
             "ನಿಮ್ಮ ವೈದ್ಯರು {doctor} ಅವರು ನಿಮಗೆ ಕೆಳಗಿನ ವೀಡಿಯೊ/ವೀಡಿಯೊಗಳನ್ನು ಕಳುಹಿಸಿದ್ದಾರೆ. "
@@ -84,31 +72,22 @@ def build_whatsapp_message_prefixes(
             "আপনার ডাক্তার {doctor} আপনাকে নিম্নলিখিত ভিডিও/ভিডিওগুলো পাঠিয়েছেন। "
             "অনুগ্রহ করে সেগুলো মনোযোগ দিয়ে দেখুন এবং ভিডিওতে দেওয়া নির্দেশনা অনুসরণ করুন, "
             "কারণ এগুলো আপনার ডাক্তারের গুরুত্বপূর্ণ পর্যবেক্ষণের জন্য। "
-            "আপনার শিশুর স্বাস্থ্য ও সুস্থতা ভিডিওগুলোর নির্দেশনা অনুসরণের উপর নির্ভর করে। "
+            "আপনার সন্তানের স্বাস্থ্য ও কল্যাণ ভিডিওতে দেওয়া নির্দেশনা অনুসরণ করার উপর নির্ভর করে। "
+        ),
+        "te": (
+            "మీ డాక్టర్ {doctor} మీకు క్రింది వీడియో/వీడియోలను పంపించారు. "
+            "దయచేసి వాటిని జాగ్రత్తగా చూడండి మరియు వీడియోలో ఇచ్చిన సూచనలను అనుసరించండి, "
+            "ఎందుకంటే ఇవి మీ డాక్టర్ యొక్క ముఖ్యమైన పరిశీలనల కోసం. "
+            "మీ పిల్లల ఆరోగ్యం మరియు శ్రేయస్సు వీడియోల్లో ఉన్న సూచనలను అనుసరించడంపై ఆధారపడి ఉంటుంది. "
         ),
     }
 
     out: Dict[str, str] = {}
-    for code, _label in getattr(settings, "LANGUAGES", [("en", "English")]):
-        tmpl = templates.get(code, templates["en"])
-        if code == "en":
-            out[code] = tmpl.format(doctor=dn_en)
-        else:
-            if dn_local:
-                out[code] = tmpl.format(doctor=dn_local)
-            else:
-                out[code] = (
-                    tmpl.replace("{doctor} ", "")
-                    .replace("{doctor}", "")
-                    .strip()
-                    + " "
-                )
+    for lang, tmpl in templates.items():
+        out[lang] = tmpl.format(doctor=doctor)
     return out
 
 
-# ---------------------------------------------------------------------
-# Catalog payload builder
-# ---------------------------------------------------------------------
 def _build_catalog_payload() -> Dict[str, Any]:
     # -----------------------------------------------------------------
     # Therapy Areas
@@ -158,8 +137,8 @@ def _build_catalog_payload() -> Dict[str, Any]:
     bundles_payload = []
     for b in bundles:
         trigger = b.trigger
-        therapy = trigger.primary_therapy
-        topic = trigger.cluster
+        therapy = getattr(trigger, "primary_therapy", None)
+        topic = getattr(trigger, "cluster", None)
 
         bundles_payload.append(
             {
@@ -179,7 +158,7 @@ def _build_catalog_payload() -> Dict[str, Any]:
     # -----------------------------------------------------------------
     videos = list(
         Video.objects.filter(is_active=True)
-        .select_related("primary_therapy", "primary_trigger")
+        .select_related("primary_therapy", "primary_trigger", "primary_trigger__cluster")
         .prefetch_related("languages")
         .order_by("sort_order", "id")
     )
@@ -209,16 +188,51 @@ def _build_catalog_payload() -> Dict[str, Any]:
 
         trigger_names = [trigger.display_name] if trigger else []
 
-        search_text = " ".join(
-            [
-                *titles.values(),
-                v.code,
-                *(bundle_codes),
-                *(trigger_names),
-                therapy.code if therapy else "",
-                topic.code if topic else "",
-            ]
-        ).lower()
+        bundle_name_tokens: List[str] = []
+        for bc in bundle_codes:
+            names = bundle_names_by_code.get(bc, {})
+            bundle_name_tokens.append(bc)
+            bundle_name_tokens.extend([n for n in names.values() if n])
+
+        search_parts: List[str] = []
+        search_parts.extend([t for t in titles.values() if t])
+        search_parts.append(v.code)
+        search_parts.append(v.description or "")
+
+        if trigger:
+            search_parts.extend(
+                [
+                    trigger.code or "",
+                    trigger.display_name or "",
+                    getattr(trigger, "doctor_trigger_label", "") or "",
+                    getattr(trigger, "subtopic_title", "") or "",
+                    getattr(trigger, "search_keywords", "") or "",
+                    getattr(trigger, "navigation_pathways", "") or "",
+                ]
+            )
+
+        if therapy:
+            search_parts.extend(
+                [
+                    therapy.code or "",
+                    therapy.display_name or "",
+                    therapy.description or "",
+                ]
+            )
+
+        if topic:
+            search_parts.extend(
+                [
+                    topic.code or "",
+                    topic.display_name or "",
+                    getattr(topic, "description", "") or "",
+                ]
+            )
+
+        # Bundle codes + names across languages
+        search_parts.extend(bundle_name_tokens)
+
+        search_text = " ".join([p for p in search_parts if p]).lower()
 
         videos_payload.append(
             {
@@ -238,13 +252,10 @@ def _build_catalog_payload() -> Dict[str, Any]:
         "therapy_areas": therapy_payload,
         "topics": topics_payload,
         "videos": videos_payload,
-        "message_prefixes": build_whatsapp_message_prefixes(),
+        "message_prefixes": build_whatsapp_message_prefixes("your doctor"),
     }
 
 
-# ---------------------------------------------------------------------
-# Cached accessor
-# ---------------------------------------------------------------------
 def get_catalog_json_cached(force_refresh: bool = False) -> Dict[str, Any]:
     if not force_refresh:
         cached = cache.get(_CATALOG_CACHE_KEY)
