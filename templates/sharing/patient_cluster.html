@@ -2,412 +2,118 @@
 {% block title %}{{ clinic.display_name }} — {{ cluster_title }}{% endblock %}
 {% block header_title %}{{ clinic.display_name }}{% endblock %}
 
-{% block head %}
-<style>
-  /* Patient Cluster Page Styles */
-  .bundle-header {
-    text-align: center;
-    padding: 32px 24px;
-    background: linear-gradient(135deg, var(--surface-2), transparent);
-    border-radius: var(--radius-lg);
-    border: 1px solid var(--border);
-    margin-bottom: 32px;
-  }
-
-  .bundle-title {
-    font-size: 2rem;
-    font-weight: 800;
-    color: var(--text);
-    margin-bottom: 8px;
-    line-height: 1.2;
-  }
-
-  .bundle-subtitle {
-    font-size: 1.125rem;
-    color: var(--muted);
-    margin-bottom: 20px;
-  }
-
-  .bundle-icon {
-    font-size: 48px;
-    margin-bottom: 20px;
-    color: var(--primary);
-  }
-
-  .video-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-    gap: 24px;
-    margin: 32px 0;
-  }
-
-  @media (max-width: 768px) {
-    .video-grid {
-      grid-template-columns: 1fr;
-      gap: 20px;
-    }
-  }
-
-  .video-card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    overflow: hidden;
-    transition: all 0.3s ease;
-    box-shadow: var(--shadow-sm);
-  }
-
-  .video-card:hover {
-    transform: translateY(-4px);
-    box-shadow: var(--shadow-lg);
-    border-color: var(--primary);
-  }
-
-  .video-card-header {
-    padding: 20px;
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
-  }
-
-  .video-card-title {
-    font-size: 1.125rem;
-    font-weight: 700;
-    color: var(--text);
-    margin: 0;
-    line-height: 1.4;
-  }
-
-  .video-card-number {
-    display: inline-block;
-    background: var(--primary);
-    color: var(--primary-contrast);
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    text-align: center;
-    line-height: 28px;
-    font-weight: 700;
-    font-size: 0.875rem;
-    margin-right: 12px;
-    vertical-align: middle;
-  }
-
-  .video-card-player {
-    position: relative;
-    padding-bottom: 56.25%;
-    height: 0;
-    overflow: hidden;
-    background: #000;
-  }
-
-  .video-card-iframe {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    border: 0;
-  }
-
-  .video-card-fallback {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    display: none;
-    align-items: center;
-    justify-content: center;
-    background: var(--surface-2);
-    flex-direction: column;
-    gap: 16px;
-    padding: 24px;
-    text-align: center;
-  }
-
-  .video-card-empty {
-    padding: 40px 24px;
-    text-align: center;
-    color: var(--muted);
-  }
-
-  .video-card-empty-icon {
-    font-size: 48px;
-    margin-bottom: 16px;
-    opacity: 0.5;
-  }
-
-  .language-controls {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    padding: 24px;
-    margin: 32px 0;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 20px;
-  }
-
-  .language-selector {
-    flex: 1;
-    min-width: 250px;
-  }
-
-  .language-selector label {
-    display: block;
-    margin-bottom: 8px;
-    font-weight: 600;
-    color: var(--text);
-  }
-
-  .progress-indicator {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    font-size: 0.875rem;
-    color: var(--muted);
-  }
-
-  .progress-dots {
-    display: flex;
-    gap: 6px;
-  }
-
-  .progress-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--border);
-    transition: all 0.3s ease;
-  }
-
-  .progress-dot.active {
-    background: var(--primary);
-    transform: scale(1.2);
-  }
-
-  .navigation-buttons {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-top: 40px;
-    padding-top: 24px;
-    border-top: 1px solid var(--border);
-    flex-wrap: wrap;
-    gap: 16px;
-  }
-
-  .back-button {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 12px 24px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    color: var(--text);
-    text-decoration: none;
-    font-weight: 600;
-    transition: all 0.2s ease;
-  }
-
-  .back-button:hover {
-    background: var(--surface-2);
-    border-color: var(--primary);
-    color: var(--primary);
-    transform: translateY(-2px);
-  }
-
-  .empty-bundle {
-    text-align: center;
-    padding: 64px 24px;
-    background: var(--surface);
-    border-radius: var(--radius-lg);
-    border: 2px dashed var(--border);
-  }
-
-  .empty-bundle-icon {
-    font-size: 64px;
-    margin-bottom: 24px;
-    opacity: 0.5;
-    color: var(--muted);
-  }
-
-  .empty-bundle-title {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: var(--text);
-    margin-bottom: 12px;
-  }
-
-  /* Responsive Design */
-  @media (max-width: 640px) {
-    .bundle-header {
-      padding: 24px 16px;
-    }
-    
-    .bundle-title {
-      font-size: 1.5rem;
-    }
-    
-    .bundle-subtitle {
-      font-size: 1rem;
-    }
-    
-    .language-controls {
-      flex-direction: column;
-      align-items: stretch;
-      padding: 20px;
-    }
-    
-    .language-selector {
-      min-width: 100%;
-    }
-    
-    .navigation-buttons {
-      flex-direction: column;
-      align-items: stretch;
-    }
-    
-    .back-button {
-      text-align: center;
-      justify-content: center;
-    }
-  }
-
-  /* Dark mode adjustments */
-  @media (prefers-color-scheme: dark) {
-    .bundle-header {
-      background: linear-gradient(135deg, rgba(51, 65, 85, 0.5), transparent);
-    }
-    
-    .video-card {
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-    }
-    
-    .empty-bundle {
-      background: var(--surface-2);
-    }
-  }
-
-  /* Print styles */
-  @media print {
-    .video-card {
-      break-inside: avoid;
-      border: 1px solid #ccc;
-      box-shadow: none;
-    }
-    
-    .video-card-player {
-      display: none;
-    }
-  }
-</style>
-{% endblock %}
-
 {% block content %}
 <div class="card">
-  <div class="bundle-header">
-    <div class="bundle-icon">📦</div>
-    <h1 class="bundle-title">{{ cluster_title }}</h1>
-    <div class="bundle-subtitle">Patient education bundle</div>
-    <div class="muted">{{ items|length }} video{{ items|length|pluralize:"s" }} in this collection</div>
-  </div>
-
-  <div class="language-controls">
-    <div class="language-selector">
-      <label for="lang">Select Language</label>
-      <select id="lang">
-        {% for code, name in languages %}
-          <option value="{{ code }}" {% if code == selected_lang %}selected{% endif %}>
-            {{ name }}
-          </option>
-        {% endfor %}
-      </select>
+  <div style="display: flex; align-items: flex-start; gap: 20px; flex-wrap: wrap; padding-bottom: 24px; border-bottom: 1px solid var(--border);">
+    <div style="width: 80px; height: 80px; border-radius: 20px; border: 2px solid var(--border); background: linear-gradient(135deg, var(--primary), #3b82f6); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 32px; font-weight: 800; position: relative; overflow: hidden; flex-shrink: 0;">
+      <div style="line-height: 1;">{{ doctor.user.full_name|default:"D"|slice:":1"|upper }}</div>
+      {% if doctor.photo %}
+        <img src="{{ doctor.photo.url }}"
+             alt="Doctor photo"
+             loading="lazy"
+             onerror="this.remove();"
+             style="position:absolute; inset:0; width:100%; height:100%; object-fit:cover;" />
+      {% endif %}
     </div>
-    
-    {% if items %}
-    <div class="progress-indicator">
-      <span>Content in this bundle:</span>
-      <div class="progress-dots">
-        {% for it in items %}
-        <div class="progress-dot {% if forloop.counter == 1 %}active{% endif %}" 
-             title="Video {{ forloop.counter }}"></div>
-        {% endfor %}
+
+    <div style="flex: 1; min-width: 0;">
+      <div style="font-size: 1.5rem; font-weight: 800; color: var(--text); margin-bottom: 4px;">Dr. {{ doctor.user.full_name }}</div>
+      <div class="muted" style="font-size: 0.9375rem; margin-bottom: 8px;">{{ clinic.display_name }}</div>
+      <div class="muted" style="font-size: 0.875rem; margin-bottom: 4px;">{{ clinic.state }}{% if clinic.postal_code %} — {{ clinic.postal_code }}{% endif %}</div>
+
+      <div class="muted" style="margin-top: 12px; font-size: 0.875rem; line-height: 1.5;">
+        {{ clinic.address_text|linebreaksbr }}
+      </div>
+
+      <div class="muted" style="margin-top: 8px; font-size: 0.875rem;">
+        <div style="display: inline-flex; align-items: center; gap: 6px;">
+          <span style="font-size: 1rem;">📞</span>
+          <span>Clinic phone: {{ clinic.clinic_phone }}</span>
+        </div>
+        {% if clinic.clinic_whatsapp_number %}
+          <div style="display: inline-flex; align-items: center; gap: 6px; margin-left: 16px;">
+            <span style="font-size: 1rem;">💬</span>
+            <span>WhatsApp: {{ clinic.clinic_whatsapp_number }}</span>
+          </div>
+        {% endif %}
       </div>
     </div>
-    {% endif %}
   </div>
 
-  {% if items %}
-    <div class="video-grid">
+  <div style="margin-top: 24px;">
+    <div style="text-align: center; margin-bottom: 32px;">
+      <div style="font-size: 2rem; font-weight: 800; color: var(--text); margin-bottom: 8px; line-height: 1.2;">{{ cluster_title }}</div>
+      <div class="muted" style="font-size: 1.125rem; margin-bottom: 8px;">Patient education bundle</div>
+      <div class="muted" style="font-size: 0.875rem;">
+        {% if items %}
+          {{ items|length }} video{{ items|length|pluralize:"s" }} in this collection
+        {% else %}
+          No videos in this bundle
+        {% endif %}
+      </div>
+    </div>
+
+    <div style="margin-bottom: 24px;">
+      <div class="row" style="max-width: 300px;">
+        <div>
+          <label for="lang" style="font-size: 0.875rem; font-weight: 600; color: var(--text); margin-bottom: 8px; display: block;">Language</label>
+          <select id="lang" style="width: 100%; padding: 12px; border: 1.5px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font-size: 0.9375rem;">
+            {% for code, name in languages %}
+              <option value="{{ code }}" {% if code == selected_lang %}selected{% endif %}>
+                {{ name }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+    </div>
+
+    {% if items %}
       {% for it in items %}
-        <div class="video-card" id="video-{{ forloop.counter }}">
-          <div class="video-card-header">
-            <div class="video-card-number">{{ forloop.counter }}</div>
-            <div class="video-card-title">{{ it.title }}</div>
+        <div style="margin-top: 32px; border-top: 1px solid var(--border); padding-top: 24px;">
+          <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+            <div style="width: 32px; height: 32px; border-radius: 50%; background: var(--primary); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.875rem; flex-shrink: 0;">
+              {{ forloop.counter }}
+            </div>
+            <div style="font-size: 1.125rem; font-weight: 700; color: var(--text);">{{ it.title }}</div>
           </div>
           
           {% if it.url %}
-            <div class="video-card-player">
-              <iframe class="yt-player video-card-iframe"
+            <div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; border-radius: 16px; border: 1px solid var(--border); background: #000; box-shadow: var(--shadow-sm);">
+              <iframe class="yt-player"
                       data-youtube-url="{{ it.url }}"
                       referrerpolicy="strict-origin-when-cross-origin"
                       loading="lazy"
+                      style="position: absolute; top:0; left:0; width:100%; height:100%; border:0;"
                       allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                       allowfullscreen></iframe>
 
-              <div class="video-card-fallback">
-                <div style="font-size: 32px; margin-bottom: 8px;">🎬</div>
-                <div class="muted" style="margin-bottom: 16px;">Unable to load video</div>
-                <a href="{{ it.url }}" target="_blank" rel="noopener noreferrer" class="btn">
-                  Watch on YouTube
+              <div class="yt-fallback"
+                   style="display:none; position: absolute; top:0; left:0; width:100%; height:100%; align-items:center; justify-content:center; flex-direction: column; gap: 16px; padding: 24px; background: var(--surface-2); text-align: center;">
+                <div style="font-size: 48px; opacity: 0.5;">🎬</div>
+                <div class="muted" style="margin-bottom: 16px;">Unable to embed this video.</div>
+                <a href="{{ it.url }}" target="_blank" rel="noopener noreferrer" style="padding: 12px 20px; background: var(--primary); color: #fff; border-radius: var(--radius-sm); font-weight: 600; text-decoration: none; font-size: 0.9375rem;">
+                  Open on YouTube
                 </a>
               </div>
             </div>
           {% else %}
-            <div class="video-card-empty">
-              <div class="video-card-empty-icon">⏳</div>
-              <div style="font-weight: 600; color: var(--text); margin-bottom: 8px;">
-                Video Coming Soon
-              </div>
-              <div class="muted">
-                This educational video will be available shortly.
-              </div>
+            <div style="padding: 32px 24px; background: var(--surface-2); border-radius: 16px; text-align: center; margin-top: 16px;">
+              <div style="font-size: 48px; margin-bottom: 16px; opacity: 0.5;">⏳</div>
+              <div style="font-size: 1.125rem; font-weight: 600; color: var(--text); margin-bottom: 8px;">Video Coming Soon</div>
+              <div class="muted">This educational video will be available shortly.</div>
             </div>
           {% endif %}
         </div>
       {% endfor %}
-    </div>
-  {% else %}
-    <div class="empty-bundle">
-      <div class="empty-bundle-icon">📭</div>
-      <div class="empty-bundle-title">No Videos Available</div>
-      <div class="muted" style="max-width: 400px; margin: 0 auto;">
-        This educational bundle is currently being prepared. Please check back soon for video content.
+    {% else %}
+      <div style="margin-top: 48px; padding: 48px 24px; background: var(--surface-2); border-radius: 16px; text-align: center; border: 2px dashed var(--border);">
+        <div style="font-size: 64px; margin-bottom: 24px; opacity: 0.5; color: var(--muted);">📭</div>
+        <div style="font-size: 1.5rem; font-weight: 700; color: var(--text); margin-bottom: 12px;">No Videos Available</div>
+        <div class="muted" style="max-width: 400px; margin: 0 auto;">
+          This educational bundle is currently being prepared. Please check back soon for video content.
+        </div>
       </div>
-    </div>
-  {% endif %}
-
-  <div class="navigation-buttons">
-    <a href="#" onclick="window.history.back(); return false;" class="back-button">
-      <span>←</span>
-      Back to Previous Page
-    </a>
-    
-    {% if items %}
-    <div style="display: flex; gap: 8px;">
-      {% for it in items %}
-        {% if it.url %}
-        <a href="{{ it.url }}" target="_blank" rel="noopener noreferrer" 
-           class="btn btn-secondary" style="padding: 8px 16px; font-size: 0.875rem;">
-          Video {{ forloop.counter }}
-        </a>
-        {% endif %}
-      {% endfor %}
-    </div>
     {% endif %}
   </div>
 </div>
@@ -423,16 +129,14 @@
       disablekb: "1",
       controls: "1",
       fs: "1",
-      origin: window.location.origin,
-      autoplay: "0"
+      origin: window.location.origin
     });
     return "https://www.youtube-nocookie.com/embed/" + videoId + "?" + params.toString();
   }
 
-  // Process all video iframes
   document.querySelectorAll(".yt-player").forEach(function (iframe) {
     const rawUrl = iframe.dataset.youtubeUrl || "";
-    const fallback = iframe.parentElement.querySelector('.video-card-fallback');
+    const fallback = iframe.nextElementSibling;
 
     const match = rawUrl.match(
       /(?:youtube\.com\/watch\?v=|youtube\.com\/embed\/|youtube-nocookie\.com\/embed\/|youtu\.be\/)([A-Za-z0-9_-]{11})/
@@ -452,30 +156,10 @@
     });
   });
 
-  // Language selector
   document.getElementById("lang").addEventListener("change", function () {
     const url = new URL(window.location.href);
     url.searchParams.set("lang", this.value);
     window.location.href = url.toString();
-  });
-
-  // Progress indicator interaction
-  const videoCards = document.querySelectorAll('.video-card');
-  const progressDots = document.querySelectorAll('.progress-dot');
-  
-  videoCards.forEach((card, index) => {
-    const observer = new IntersectionObserver((entries) => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          progressDots.forEach(dot => dot.classList.remove('active'));
-          progressDots[index].classList.add('active');
-        }
-      });
-    }, {
-      threshold: 0.5
-    });
-    
-    observer.observe(card);
   });
 })();
 </script>
