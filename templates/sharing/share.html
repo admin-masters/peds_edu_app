@@ -4,63 +4,35 @@
 
 {% block content %}
 <div class="card">
-  <div style="display:flex; gap:14px; align-items:flex-start;">
-    <div style="width:180px;">
-      {% if doctor.photo %}
-        <img
-          id="doctorPhoto"
-          src="{{ doctor.photo.url }}"
-          alt="Doctor photo"
-          style="width:140px; height:140px; border-radius:14px; object-fit:cover;"
-          onerror="this.style.display='none'; document.getElementById('doctorPhotoFallback').style.display='flex';"
-        >
-        <div
-          id="doctorPhotoFallback"
-          class="avatar-placeholder"
-          style="display:none; width:140px; height:140px; border-radius:14px; align-items:center; justify-content:center; font-size:48px; font-weight:700; background:#f1f5f9;"
-        >
-          {{ doctor.user.full_name|default:doctor.user.email|slice:":1"|upper }}
-        </div>
-      {% else %}
-        <div class="avatar-placeholder"
-             style="width:140px; height:140px; border-radius:14px; display:flex; align-items:center; justify-content:center; font-size:48px; font-weight:700; background:#f1f5f9;">
-          {{ doctor.user.full_name|default:doctor.user.email|slice:":1"|upper }}
-        </div>
-      {% endif %}
-    </div>
-
-    <div style="flex:1;">
-      <div class="row two">
-        <div>
-          <h3>Doctor</h3>
-          <p><b>{{ doctor.user.full_name }}</b></p>
-          <p class="muted">Doctor ID: {{ doctor.doctor_id }}</p>
-          <p class="muted">WhatsApp: {{ doctor.whatsapp_number }}</p>
-        </div>
-
-        <div>
-          <h3>Clinic</h3>
-          <p><b>{{ doctor.clinic.display_name }}</b></p>
-          <p class="muted">Phone: {{ doctor.clinic.clinic_phone }}</p>
-          {% if doctor.clinic.clinic_whatsapp_number %}
-            <p class="muted">WhatsApp: {{ doctor.clinic.clinic_whatsapp_number }}</p>
-          {% endif %}
-          <p class="muted">{{ doctor.clinic.address_text }}</p>
-          <p class="muted">Postal Code: {{ doctor.postal_code|default:doctor.clinic.postal_code }}</p>
-          <p class="muted">State: {{ doctor.clinic.state }}</p>
-        </div>
-      </div>
-    </div>
-  </div>
+  <h3>Doctor</h3>
+  <p><b>{{ doctor.user.full_name }}</b></p>
+  <p class="muted">Doctor ID: {{ doctor.doctor_id }}</p>
 </div>
 
 <div class="card">
-  <h3>Select Video &amp; Language</h3>
+  <h3>Share Patient Education</h3>
 
-  <div class="row two">
+  <div class="row three">
+    <div>
+      <label>Therapy Area</label>
+      <select id="therapySel"></select>
+    </div>
+
+    <div>
+      <label>Topic</label>
+      <select id="topicSel"></select>
+    </div>
+
+    <div>
+      <label>Bundle</label>
+      <select id="bundleSel"></select>
+    </div>
+  </div>
+
+  <div class="row two" style="margin-top:12px;">
     <div>
       <label>Search videos</label>
-      <input id="searchBox" type="text" placeholder="Type to search...">
+      <input id="searchBox" type="text" placeholder="Search videos…">
     </div>
 
     <div>
@@ -73,195 +45,108 @@
     </div>
   </div>
 
-  <div style="margin-top:12px;">
-    <div class="chips" id="clusterChips"></div>
-  </div>
-
-  <div style="margin-top:12px;" class="muted">
-    Select a video, then share the link via WhatsApp below.
-  </div>
-
-  <div style="margin-top:12px;" id="videoList"></div>
+  <div id="videoList" style="margin-top:12px;"></div>
 
   <div class="sticky-share">
-    <h3 style="margin:0 0 8px 0;">Share</h3>
+    <label>WhatsApp number</label>
+    <input id="waNumber" type="tel" maxlength="10" placeholder="10-digit number">
 
-    <label>WhatsApp number- 10 digits</label>
-    <input id="waNumber" type="tel" maxlength="10" placeholder="Enter patient's WhatsApp number" pattern="\d{10}">
-
-    <button id="shareBtn" disabled>Share Selected Video</button>
-    <div class="muted" style="font-size:12px; margin-top:6px;">We will open WhatsApp with a prefilled message.</div>
+    <button id="shareVideoBtn" disabled>Share Video</button>
+    <button id="shareBundleBtn" disabled>Share Bundle</button>
   </div>
 </div>
-
-<div class="card" style="margin-top: 12px; text-align:center;">
-  <a href="{% url 'accounts:modify_clinic_details' doctor.doctor_id %}"
-     style="display:inline-block; padding:12px 16px; border-radius:14px; background:#111827; color:#ffffff; text-decoration:none; font-weight:600;">
-    Modify Clinic Details
-  </a>
-</div>
-
-<style>
-  .chips{display:flex; flex-wrap:wrap; gap:8px;}
-  .chip{
-    padding:8px 10px;
-    border-radius:999px;
-    border:1px solid #d1d5db;
-    background:#f3f4f6;
-    color:#111827;
-    cursor:pointer;
-    font-size:13px;
-    font-weight:600;
-  }
-  .chip.active{
-    background:#111827;
-    color:#ffffff;
-    border-color:#111827;
-  }
-  .chip:hover{
-    background:#e5e7eb;
-  }
-
-  .video-item{
-    padding:10px;
-    border:1px solid #e5e7eb;
-    border-radius:12px;
-    margin-bottom:8px;
-    cursor:pointer;
-  }
-  .video-item.active{
-    border-color:#111827;
-    box-shadow:0 0 0 2px rgba(17,24,39,0.12);
-  }
-  .video-title{font-weight:700;}
-  .video-meta{font-size:12px; color:#6b7280;}
-  .sticky-share{
-    margin-top:14px;
-    padding-top:12px;
-    border-top:1px solid #e5e7eb;
-  }
-</style>
 
 {{ catalog_json|json_script:"catalog-json" }}
 
 <script>
-  let catalog = JSON.parse(document.getElementById("catalog-json").textContent);
+const catalog = JSON.parse(document.getElementById("catalog-json").textContent);
 
-  if (typeof catalog === "string") {
-    try { catalog = JSON.parse(catalog); } catch (e) {}
-  }
+const therapySel = document.getElementById("therapySel");
+const topicSel = document.getElementById("topicSel");
+const bundleSel = document.getElementById("bundleSel");
+const videoList = document.getElementById("videoList");
+const searchBox = document.getElementById("searchBox");
+const langSel = document.getElementById("lang");
+const waNumber = document.getElementById("waNumber");
+const shareVideoBtn = document.getElementById("shareVideoBtn");
+const shareBundleBtn = document.getElementById("shareBundleBtn");
 
-  if (!catalog || typeof catalog !== "object") {
-    catalog = { clusters: [], videos: [], message_prefixes: {} };
-  }
+let activeVideo = null;
 
-  catalog.clusters = Array.isArray(catalog.clusters) ? catalog.clusters : [];
-  catalog.videos = Array.isArray(catalog.videos) ? catalog.videos : [];
-  catalog.message_prefixes = catalog.message_prefixes || {};
+function validWA() {
+  return /^\d{10}$/.test(waNumber.value);
+}
 
-  const chipsEl = document.getElementById("clusterChips");
-  const listEl = document.getElementById("videoList");
-  const searchBox = document.getElementById("searchBox");
-  const langSel = document.getElementById("lang");
-  const waNumber = document.getElementById("waNumber");
-  const shareBtn = document.getElementById("shareBtn");
+function populateSelect(el, items, labelFn) {
+  el.innerHTML = `<option value="">-- All --</option>`;
+  items.forEach(i => {
+    const o = document.createElement("option");
+    o.value = i.code;
+    o.textContent = labelFn(i);
+    el.appendChild(o);
+  });
+}
 
-  let activeCluster = null;
-  let activeVideoId = null;
+populateSelect(therapySel, catalog.therapy_areas, t => t.display_name);
+populateSelect(topicSel, catalog.topics, t => t.display_name);
+populateSelect(bundleSel, catalog.bundles, b => b.display_name);
 
-  function renderChips(){
-    chipsEl.innerHTML = "";
-    catalog.clusters.forEach(c=>{
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "chip" + (activeCluster===c.id ? " active":"");
-      b.textContent = c.display_name;
-      b.onclick = ()=>{
-        activeCluster = c.id;
-        activeVideoId = null;
-        renderChips();
-        renderVideos();
-        updateShareEnabled();
-      };
-      chipsEl.appendChild(b);
-    });
-  }
+function filteredVideos() {
+  const q = searchBox.value.toLowerCase();
+  return catalog.videos.filter(v => {
+    if (bundleSel.value && !v.bundle_codes.includes(bundleSel.value)) return false;
+    if (q && !v.search_text.includes(q)) return false;
+    return true;
+  });
+}
 
-  function getFilteredVideos(){
-    const q = (searchBox.value||"").toLowerCase();
-    const lang = langSel.value;
-    let vids = catalog.videos;
+function renderVideos() {
+  const lang = langSel.value;
+  const vids = filteredVideos();
+  videoList.innerHTML = "";
 
-    if(activeCluster){
-      vids = vids.filter(v => v.cluster_ids.includes(activeCluster));
-    }
+  vids.forEach(v => {
+    const d = document.createElement("div");
+    d.className = "video-item" + (activeVideo === v ? " active" : "");
+    d.innerHTML = `<b>${v.titles[lang] || v.titles.en}</b>`;
+    d.onclick = () => {
+      activeVideo = v;
+      renderVideos();
+      updateButtons();
+    };
+    videoList.appendChild(d);
+  });
+}
 
-    if(q){
-      vids = vids.filter(v =>
-        (v.titles[lang]||"").toLowerCase().includes(q) ||
-        (v.search_text||"").toLowerCase().includes(q)
-      );
-    }
-    return vids;
-  }
+function updateButtons() {
+  shareVideoBtn.disabled = !(activeVideo && validWA());
+  shareBundleBtn.disabled = !(bundleSel.value && validWA());
+}
 
-  function renderVideos(){
-    const lang = langSel.value;
-    const vids = getFilteredVideos();
-    listEl.innerHTML = "";
+function buildMessage(link, lang) {
+  const prefix = catalog.message_prefixes[lang] || "";
+  return prefix + link;
+}
 
-    if(!vids.length){
-      listEl.innerHTML = "<div class='muted'>No videos found.</div>";
-      return;
-    }
+shareVideoBtn.onclick = () => {
+  const lang = langSel.value;
+  const link = `${location.origin}/p/${catalog.doctor_id}/v/${activeVideo.id}/?lang=${lang}`;
+  window.open(`https://wa.me/91${waNumber.value}?text=${encodeURIComponent(buildMessage(link, lang))}`);
+};
 
-    vids.forEach(v=>{
-      const d = document.createElement("div");
-      d.className = "video-item" + (activeVideoId===v.id ? " active":"");
-      d.onclick = ()=>{
-        activeVideoId = v.id;
-        renderVideos();
-        updateShareEnabled();
-      };
-      d.innerHTML = `
-        <div class="video-title">${(v.titles[lang]||v.titles["en"]||"Untitled")}</div>
-        <div class="video-meta">${v.trigger_names.join(", ")}</div>
-      `;
-      listEl.appendChild(d);
-    });
-  }
+shareBundleBtn.onclick = () => {
+  const lang = langSel.value;
+  const link = `${location.origin}/p/${catalog.doctor_id}/c/${bundleSel.value}/?lang=${lang}`;
+  window.open(`https://wa.me/91${waNumber.value}?text=${encodeURIComponent(buildMessage(link, lang))}`);
+};
 
-  function updateShareEnabled(){
-    const okVideo = !!activeVideoId;
-    const okWa = /^\d{10}$/.test((waNumber.value||"").trim());
-    shareBtn.disabled = !(okVideo && okWa);
-  }
+[therapySel, topicSel, bundleSel, searchBox, langSel, waNumber]
+  .forEach(el => el.addEventListener("change", () => {
+    activeVideo = null;
+    renderVideos();
+    updateButtons();
+  }));
 
-  function buildShareMessage(video, lang){
-    const title = (video.titles[lang] || video.titles["en"] || "Video");
-    const url = video.urls[lang] || video.urls["en"];
-    const prefix = catalog.message_prefixes[lang] || catalog.message_prefixes["en"] || "";
-    return `${prefix}${title}\n${url}`;
-  }
-
-  shareBtn.onclick = ()=>{
-    const lang = langSel.value;
-    const video = catalog.videos.find(v=>v.id===activeVideoId);
-    if(!video) return;
-
-    const wa = waNumber.value.trim();
-    const msg = buildShareMessage(video, lang);
-    const waUrl = `https://wa.me/91${wa}?text=${encodeURIComponent(msg)}`;
-    window.open(waUrl, "_blank");
-  };
-
-  searchBox.addEventListener("input", ()=>{ renderVideos(); updateShareEnabled(); });
-  langSel.addEventListener("change", ()=>{ renderVideos(); updateShareEnabled(); });
-  waNumber.addEventListener("input", updateShareEnabled);
-
-  activeCluster = catalog.clusters.length ? catalog.clusters[0].id : null;
-  renderChips();
-  renderVideos();
-  updateShareEnabled();
+renderVideos();
 </script>
 {% endblock %}
