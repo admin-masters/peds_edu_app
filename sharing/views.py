@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+import json
+
 from django.contrib.auth.decorators import login_required
 from django.http import HttpRequest, HttpResponse, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 
 from accounts.models import DoctorProfile
 from catalog.constants import LANGUAGE_CODES, LANGUAGES
-from catalog.models import Video, VideoLanguage, VideoCluster
+from catalog.models import (
+    Video,
+    VideoLanguage,
+    VideoCluster,
+    VideoClusterLanguage,
+)
 
 from .services import build_whatsapp_message_prefixes, get_catalog_json_cached
 
@@ -28,14 +35,24 @@ def doctor_share(request: HttpRequest, doctor_id: str) -> HttpResponse:
     # Force refresh once to avoid stale/empty cache during development.
     catalog_json = get_catalog_json_cached(force_refresh=True)
 
-    # ✅ DoctorProfile has no full_name. Name lives on the related User.
-    doctor_name = ""
+    # Ensure we are working with a mutable dict
+    if isinstance(catalog_json, str):
+        try:
+            catalog_json = json.loads(catalog_json)
+        except Exception:
+            catalog_json = {}
+
+    catalog_json = dict(catalog_json or {})
+
+    # Doctor name lives on the related User
     try:
         doctor_name = (doctor.user.full_name or "").strip()
     except Exception:
         doctor_name = (request.user.full_name or "").strip()
 
-    message_prefixes = build_whatsapp_message_prefixes(doctor_name)
+    # Inject doctor-specific, non-cached fields
+    catalog_json["doctor_id"] = doctor_id
+    catalog_json["message_prefixes"] = build_whatsapp_message_prefixes(doctor_name)
 
     return render(
         request,
@@ -43,14 +60,16 @@ def doctor_share(request: HttpRequest, doctor_id: str) -> HttpResponse:
         {
             "doctor": doctor,
             "catalog_json": catalog_json,
-            "message_prefixes": message_prefixes,
             "languages": LANGUAGES,
         },
     )
 
 
 def patient_video(request: HttpRequest, doctor_id: str, video_code: str) -> HttpResponse:
-    doctor = get_object_or_404(DoctorProfile.objects.select_related("clinic", "user"), doctor_id=doctor_id)
+    doctor = get_object_or_404(
+        DoctorProfile.objects.select_related("clinic", "user"),
+        doctor_id=doctor_id,
+    )
 
     lang = request.GET.get("lang", "en")
     if lang not in LANGUAGE_CODES:
@@ -77,23 +96,34 @@ def patient_video(request: HttpRequest, doctor_id: str, video_code: str) -> Http
     )
 
 
-def patient_cluster(request: HttpRequest, doctor_id: str, cluster_code: str) -> HttpResponse:
-    doctor = get_object_or_404(DoctorProfile.objects.select_related("clinic", "user"), doctor_id=doctor_id)
+def patient_cluster(
+    request: HttpRequest, doctor_id: str, cluster_code: str
+) -> HttpResponse:
+    doctor = get_object_or_404(
+        DoctorProfile.objects.select_related("clinic", "user"),
+        doctor_id=doctor_id,
+    )
 
     lang = request.GET.get("lang", "en")
     if lang not in LANGUAGE_CODES:
         lang = "en"
 
-    cluster = None
-    try:
-        cluster = VideoCluster.objects.filter(code=cluster_code).first()
-    except Exception:
-        cluster = None
-
+    cluster = VideoCluster.objects.filter(code=cluster_code).first()
     if cluster is None and cluster_code.isdigit():
         cluster = get_object_or_404(VideoCluster, pk=int(cluster_code))
     elif cluster is None:
         cluster = get_object_or_404(VideoCluster, pk=-1)
+
+    # Cluster title in selected language (with English fallback)
+    cl_lang = (
+        VideoClusterLanguage.objects.filter(
+            cluster=cluster, language_code=lang
+        ).first()
+        or VideoClusterLanguage.objects.filter(
+            cluster=cluster, language_code="en"
+        ).first()
+    )
+    cluster_title = cl_lang.name if cl_lang else cluster.code
 
     try:
         videos = cluster.videos.all().order_by("sort_order", "id")
@@ -121,6 +151,7 @@ def patient_cluster(request: HttpRequest, doctor_id: str, cluster_code: str) -> 
             "doctor": doctor,
             "clinic": doctor.clinic,
             "cluster": cluster,
+            "cluster_title": cluster_title,
             "items": items,
             "languages": LANGUAGES,
             "selected_lang": lang,
