@@ -395,6 +395,70 @@
       box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
     }
   }
+/* --- Bundle-grouped search results (doctor share page) --- */
+.bundle-group {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--surface);
+  margin-bottom: 14px;
+}
+
+.bundle-group.active {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.35);
+}
+
+.bundle-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--surface-2);
+}
+
+.bundle-title {
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.bundle-meta {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.bundle-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.bundle-actions .btn {
+  padding: 8px 12px;
+  font-size: 0.85rem;
+}
+
+.bundle-videos {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.video-item.child {
+  padding: 10px 12px;
+}
+
+.video-item.child .video-icon {
+  width: 32px;
+  height: 32px;
+  font-size: 0.9rem;
+}
+
 </style>
 {% endblock %}
 
@@ -454,8 +518,8 @@
     </div>
 
     <div class="form-group">
-      <label for="topicSel">Topic</label>
-      <select id="topicSel"></select>
+      <label for="triggerSel">Trigger</label>
+      <select id="triggerSel"></select>
     </div>
 
     <div class="form-group">
@@ -466,9 +530,9 @@
 
   <div class="toolbar">
     <div class="grow">
-      <label for="searchBox">Search Videos</label>
+      <label for="searchBox">Search Bundles / Videos</label>
       <div class="search-wrapper">
-        <input id="searchBox" type="text" placeholder="Search by title, keyword, bundle name…" autocomplete="off" />
+        <input id="searchBox" type="text" placeholder="Search by title, keyword, trigger, bundle name…" autocomplete="off" />
       </div>
     </div>
 
@@ -488,7 +552,7 @@
     <div id="videoList" class="video-list"></div>
     <div id="emptyState" class="empty-state" style="display: none;">
       <div class="empty-state-icon">📹</div>
-      <p>No videos found for the current filters.</p>
+      <p>No bundles/videos found for the current filters.</p>
       <p class="muted">Try adjusting your search or filters</p>
     </div>
   </div>
@@ -533,11 +597,10 @@
 {{ catalog_json|json_script:"catalog-json" }}
 
 <script>
-// Existing JavaScript remains completely unchanged - only CSS updates
 const catalog = JSON.parse(document.getElementById("catalog-json").textContent);
 
 const therapySel = document.getElementById("therapySel");
-const topicSel = document.getElementById("topicSel");
+const triggerSel = document.getElementById("triggerSel");
 const bundleSel = document.getElementById("bundleSel");
 const searchBox = document.getElementById("searchBox");
 const langSel = document.getElementById("lang");
@@ -555,12 +618,39 @@ const bundleCard = document.getElementById("bundleCard");
 let activeVideo = null;
 
 // -------------------- helpers --------------------
+function escapeHtml(str) {
+  return String(str || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
 function validWA() {
   return /^\d{10}$/.test((waNumber.value || "").trim());
 }
 
+const triggerByCode = {};
+(catalog.triggers || []).forEach(t => { triggerByCode[t.code] = t; });
+
 const bundleByCode = {};
 (catalog.bundles || []).forEach(b => { bundleByCode[b.code] = b; });
+
+const videoByCode = {};
+(catalog.videos || []).forEach(v => { videoByCode[v.id] = v; });
+
+const therapyByCode = {};
+(catalog.therapy_areas || []).forEach(t => { therapyByCode[t.code] = t; });
+
+function therapyLabel(code) {
+  const t = therapyByCode[code];
+  return (t && (t.display_name || t.code)) ? (t.display_name || t.code).trim() : (code || "");
+}
+
+function safeLower(s) {
+  return String(s || "").toLowerCase();
+}
 
 function bundleLabel(b, lang) {
   if (!b) return "";
@@ -572,63 +662,119 @@ function bundleLabelByCode(code, lang) {
   return bundleLabel(bundleByCode[code], lang) || code;
 }
 
-function populateSelect(el, items, labelFn, includeAll=true) {
+function triggerLabelByCode(code) {
+  const t = triggerByCode[code];
+  return (t && (t.display_name || t.code)) ? (t.display_name || t.code).trim() : (code || "");
+}
+
+function videoTitle(v, lang) {
+  if (!v) return "";
+  const titles = v.titles || {};
+  return (titles[lang] || titles["en"] || v.display_name || v.id || "").trim();
+}
+
+function populateSelect(el, items, labelFn, opts={}) {
+  const includeAll = opts.includeAll !== false;  // default true
+  const allLabel = opts.allLabel || "-- All --";
+  const preserve = !!opts.preserve;
+  const current = preserve ? (el.value || "") : "";
+
   el.innerHTML = "";
+
   if (includeAll) {
     const allOpt = document.createElement("option");
     allOpt.value = "";
-    allOpt.textContent = "-- All --";
+    allOpt.textContent = allLabel;
     el.appendChild(allOpt);
   }
+
   (items || []).forEach(i => {
     const o = document.createElement("option");
     o.value = i.code;
     o.textContent = (labelFn(i) || i.code || "").trim();
     el.appendChild(o);
   });
-}
 
-function repopulateBundleSelect(preserveValue=true) {
-  const current = preserveValue ? bundleSel.value : "";
-  populateSelect(bundleSel, catalog.bundles, b => bundleLabel(b, langSel.value));
-  if (preserveValue && current) {
-    bundleSel.value = current;
+  if (preserve && current) {
+    el.value = current;
   }
 }
 
-populateSelect(therapySel, catalog.therapy_areas, t => t.display_name);
-populateSelect(topicSel, catalog.topics, t => t.display_name);
-repopulateBundleSelect(false);
+function getSelectedTherapy() {
+  return (therapySel.value || "").trim();
+}
+
+function getSelectedTrigger() {
+  return (triggerSel.value || "").trim();
+}
+
+function getSelectedBundle() {
+  return (bundleSel.value || "").trim();
+}
+
+function repopulateTriggers({preserve=false}={}) {
+  const therapy = getSelectedTherapy();
+  const triggers = (catalog.triggers || []).filter(t => {
+    if (!therapy) return true;
+    return (t.therapy_code || "") === therapy;
+  });
+
+  // Alphabetical by label (display_name)
+  triggers.sort((a, b) => String(a.display_name || a.code || "").localeCompare(String(b.display_name || b.code || "")));
+
+  populateSelect(triggerSel, triggers, t => t.display_name || t.code, {preserve, includeAll: true, allLabel: "-- All Triggers --"});
+}
+
+function repopulateBundles({preserve=false}={}) {
+  const lang = langSel.value;
+  const therapy = getSelectedTherapy();
+  const trigger = getSelectedTrigger();
+
+  const bundles = (catalog.bundles || []).filter(b => {
+    if (therapy && (b.therapy_code || "") !== therapy) return false;
+    if (trigger && (b.trigger_code || "") !== trigger) return false;
+    return true;
+  });
+
+  // Alphabetical by localized label
+  bundles.sort((a, b) => bundleLabel(a, lang).localeCompare(bundleLabel(b, lang)));
+
+  populateSelect(bundleSel, bundles, b => bundleLabel(b, lang), {preserve, includeAll: true, allLabel: "-- All Bundles --"});
+}
 
 function clearVideoSelection() {
   activeVideo = null;
 }
 
-function filteredVideos() {
-  const q = (searchBox.value || "").toLowerCase().trim();
-  const bundle = (bundleSel.value || "").trim();
-  const therapy = (therapySel.value || "").trim();
-  const topic = (topicSel.value || "").trim();
+function currentFilteredVideos() {
+  const therapy = getSelectedTherapy();
+  const trigger = getSelectedTrigger();
+  const bundle = getSelectedBundle();
 
+  // If bundle selected: show all videos in that bundle
+  if (bundle) {
+    const b = bundleByCode[bundle];
+    const codes = (b && Array.isArray(b.video_codes)) ? b.video_codes : [];
+    const vids = codes.map(c => videoByCode[c]).filter(Boolean);
+    return vids;
+  }
+
+  // Else filter by therapy/trigger using derived codes on videos
   return (catalog.videos || []).filter(v => {
-    // Bundle selection should show ALL videos in that bundle (ignore therapy/topic)
-    if (bundle) {
-      if (!Array.isArray(v.bundle_codes) || !v.bundle_codes.includes(bundle)) return false;
-    } else {
-      if (therapy && (!Array.isArray(v.therapy_codes) || !v.therapy_codes.includes(therapy))) return false;
-      if (topic && (!Array.isArray(v.topic_codes) || !v.topic_codes.includes(topic))) return false;
-    }
-
-    if (q && !(v.search_text || "").includes(q)) return false;
+    if (therapy && (!Array.isArray(v.therapy_codes) || !v.therapy_codes.includes(therapy))) return false;
+    if (trigger && (!Array.isArray(v.trigger_codes) || !v.trigger_codes.includes(trigger))) return false;
     return true;
   });
 }
 
-function renderVideos() {
+function renderVideoFlat() {
   const lang = langSel.value;
-  const vids = filteredVideos();
+  const vids = currentFilteredVideos();
 
-  // If the selected video is no longer in the filtered list, clear it
+  // Alphabetical by localized title
+  vids.sort((a, b) => videoTitle(a, lang).localeCompare(videoTitle(b, lang)));
+
+  // If the selected video is no longer in the list, clear it
   if (activeVideo && !vids.some(v => v.id === activeVideo.id)) {
     activeVideo = null;
   }
@@ -636,20 +782,20 @@ function renderVideos() {
   videoList.innerHTML = "";
 
   if (!vids.length) {
-    videoList.style.display = 'none';
-    emptyState.style.display = 'block';
+    videoList.style.display = "none";
+    emptyState.style.display = "block";
     return;
   }
 
-  videoList.style.display = 'block';
-  emptyState.style.display = 'none';
+  videoList.style.display = "block";
+  emptyState.style.display = "none";
 
   vids.forEach(v => {
     const d = document.createElement("div");
     d.className = "video-item" + (activeVideo && activeVideo.id === v.id ? " active" : "");
-    
-    const title = (v.titles && (v.titles[lang] || v.titles["en"])) || v.id;
-    
+
+    const title = videoTitle(v, lang) || v.id;
+
     d.innerHTML = `
       <div class="video-icon">▶️</div>
       <div class="video-title">${escapeHtml(title)}</div>
@@ -659,42 +805,252 @@ function renderVideos() {
     `;
 
     d.onclick = () => {
-      activeVideo = v;
+      // Toggle selection
+      if (activeVideo && activeVideo.id === v.id) {
+        activeVideo = null;
+      } else {
+        activeVideo = v;
+      }
       updateButtons();
-      renderVideos();
+      render();
     };
+
     videoList.appendChild(d);
   });
 }
 
-function updateContextHint() {
+function renderBundleGroupedSearch(q) {
   const lang = langSel.value;
-  const bundle = (bundleSel.value || "").trim();
+  const therapy = getSelectedTherapy();
+  const trigger = getSelectedTrigger();
+  const selectedBundle = getSelectedBundle();
+
+  // Candidate bundles based on filters
+  let candidates = (catalog.bundles || []).filter(b => {
+    if (therapy && (b.therapy_code || "") !== therapy) return false;
+    if (trigger && (b.trigger_code || "") !== trigger) return false;
+    return true;
+  });
+
+  if (selectedBundle) {
+    const b = bundleByCode[selectedBundle];
+    candidates = b ? [b] : [];
+  }
+
+  const ql = safeLower(q).trim();
+
+  const results = [];
+  for (const b of candidates) {
+    const bSearch = safeLower(b.search_text || "") + " " + safeLower(bundleLabel(b, lang));
+    const bundleMatches = ql && bSearch.includes(ql);
+
+    const vCodes = Array.isArray(b.video_codes) ? b.video_codes : [];
+    const vidsAll = vCodes.map(c => videoByCode[c]).filter(Boolean);
+
+    const vidsMatching = vidsAll.filter(v => safeLower(v.search_text || "").includes(ql));
+
+    if (bundleMatches || vidsMatching.length) {
+      const vidsToShow = bundleMatches ? vidsAll : vidsMatching;
+
+      vidsToShow.sort((a, b) => videoTitle(a, lang).localeCompare(videoTitle(b, lang)));
+
+      results.push({
+        bundle: b,
+        bundleMatches,
+        videos: vidsToShow,
+        allVideoCount: vidsAll.length,
+      });
+    }
+  }
+
+  results.sort((a, b) => bundleLabel(a.bundle, lang).localeCompare(bundleLabel(b.bundle, lang)));
+
+  // Standalone videos (not part of any bundle) — kept for backwards compatibility.
+  const standalone = (catalog.videos || []).filter(v => {
+    const hasBundles = Array.isArray(v.bundle_codes) && v.bundle_codes.length;
+    if (hasBundles) return false;
+    return safeLower(v.search_text || "").includes(ql);
+  });
+
+  standalone.sort((a, b) => videoTitle(a, lang).localeCompare(videoTitle(b, lang)));
 
   if (activeVideo) {
-    const t = (activeVideo.titles && (activeVideo.titles[lang] || activeVideo.titles["en"])) || activeVideo.id;
+    const stillThereInBundles = results.some(r => r.videos.some(v => v.id === activeVideo.id));
+    const stillThereStandalone = standalone.some(v => v.id === activeVideo.id);
+    if (!stillThereInBundles && !stillThereStandalone) activeVideo = null;
+  }
+
+  videoList.innerHTML = "";
+
+  if (!results.length && !standalone.length) {
+    videoList.style.display = "none";
+    emptyState.style.display = "block";
+    return;
+  }
+
+  videoList.style.display = "block";
+  emptyState.style.display = "none";
+
+  results.forEach(r => {
+    const b = r.bundle;
+    const bCode = b.code;
+    const bTitle = bundleLabel(b, lang) || bCode;
+
+    const group = document.createElement("div");
+    group.className = "bundle-group" + (!activeVideo && getSelectedBundle() === bCode ? " active" : "");
+
+    const header = document.createElement("div");
+    header.className = "bundle-header";
+    header.innerHTML = `
+      <div>
+        <div class="bundle-title">${escapeHtml(bTitle)}</div>
+        <div class="bundle-meta">
+          Trigger: ${escapeHtml(triggerLabelByCode(b.trigger_code || ""))}${b.therapy_code ? " · Therapy: " + escapeHtml(therapyLabel(b.therapy_code)) : ""} · ${r.allVideoCount} video(s)
+        </div>
+      </div>
+      <div class="bundle-actions">
+        <button type="button" class="btn btn-secondary">Select bundle</button>
+      </div>
+    `;
+
+    header.querySelector("button").onclick = () => {
+      clearVideoSelection();
+      bundleSel.value = bCode;
+
+      if (b.therapy_code) therapySel.value = b.therapy_code;
+      repopulateTriggers({preserve: true});
+      if (b.trigger_code) triggerSel.value = b.trigger_code;
+      repopulateBundles({preserve: true});
+      bundleSel.value = bCode;
+
+      updateButtons();
+      render();
+    };
+
+    const body = document.createElement("div");
+    body.className = "bundle-videos";
+
+    r.videos.forEach(v => {
+      const d = document.createElement("div");
+      d.className = "video-item child" + (activeVideo && activeVideo.id === v.id ? " active" : "");
+      const title = videoTitle(v, lang) || v.id;
+      d.innerHTML = `
+        <div class="video-icon">▶️</div>
+        <div class="video-title">${escapeHtml(title)}</div>
+      `;
+      d.onclick = () => {
+        if (activeVideo && activeVideo.id === v.id) {
+          activeVideo = null;
+        } else {
+          activeVideo = v;
+          bundleSel.value = bCode;
+
+          if (b.therapy_code) therapySel.value = b.therapy_code;
+          repopulateTriggers({preserve: true});
+          if (b.trigger_code) triggerSel.value = b.trigger_code;
+          repopulateBundles({preserve: true});
+          bundleSel.value = bCode;
+        }
+        updateButtons();
+        render();
+      };
+      body.appendChild(d);
+    });
+
+    group.appendChild(header);
+    group.appendChild(body);
+    videoList.appendChild(group);
+  });
+
+  if (standalone.length) {
+    const group = document.createElement("div");
+    group.className = "bundle-group";
+
+    const header = document.createElement("div");
+    header.className = "bundle-header";
+    header.innerHTML = `
+      <div>
+        <div class="bundle-title">Standalone Videos</div>
+        <div class="bundle-meta">These videos are not currently part of any bundle/cluster.</div>
+      </div>
+    `;
+    group.appendChild(header);
+
+    const body = document.createElement("div");
+    body.className = "bundle-videos";
+
+    standalone.forEach(v => {
+      const d = document.createElement("div");
+      d.className = "video-item child" + (activeVideo && activeVideo.id === v.id ? " active" : "");
+      const title = videoTitle(v, lang) || v.id;
+      d.innerHTML = `
+        <div class="video-icon">▶️</div>
+        <div class="video-title">${escapeHtml(title)}</div>
+      `;
+      d.onclick = () => {
+        if (activeVideo && activeVideo.id === v.id) {
+          activeVideo = null;
+        } else {
+          activeVideo = v;
+          // Standalone video: ensure bundle selection does not conflict
+          bundleSel.value = "";
+        }
+        updateButtons();
+        render();
+      };
+      body.appendChild(d);
+    });
+
+    group.appendChild(body);
+    videoList.appendChild(group);
+  }
+}
+
+
+function render() {
+  const q = (searchBox.value || "").trim();
+  if (q) {
+    renderBundleGroupedSearch(q);
+  } else {
+    renderVideoFlat();
+  }
+}
+
+function updateContextHint() {
+  const lang = langSel.value;
+  const bundle = getSelectedBundle();
+
+  if (activeVideo) {
+    const t = videoTitle(activeVideo, lang) || activeVideo.id;
     contextHint.textContent = `Selected video: ${t}`;
     return;
   }
 
   if (bundle) {
+    const b = bundleByCode[bundle];
     const bName = bundleLabelByCode(bundle, lang) || bundle;
-    const count = (catalog.videos || []).filter(v => Array.isArray(v.bundle_codes) && v.bundle_codes.includes(bundle)).length;
+    const count = (b && Array.isArray(b.video_codes)) ? b.video_codes.length : 0;
     contextHint.textContent = `Bundle selected: ${bName} (${count} video${count === 1 ? "" : "s"}).`;
     return;
   }
 
-  contextHint.textContent = "Browse videos using filters above";
+  const therapy = getSelectedTherapy();
+  const trigger = getSelectedTrigger();
+  if (therapy || trigger) {
+    const parts = [];
+    if (therapy) parts.push(`Therapy: ${therapyLabel(therapy)}`);
+    if (trigger) parts.push(`Trigger: ${triggerLabelByCode(trigger) || trigger}`);
+    contextHint.textContent = `Browsing by ${parts.join(" · ")}`;
+    return;
+  }
+
+  contextHint.textContent = "Browse bundles/videos using filters above";
 }
 
 function updateButtons() {
   const waOk = validWA();
-  const bundle = (bundleSel.value || "").trim();
+  const bundle = getSelectedBundle();
 
-  // Show exactly one action at a time:
-  // - If a video is selected -> Share Video
-  // - Else if a bundle is selected -> Share Bundle
-  // - Else -> show none
   if (activeVideo) {
     videoCard.style.display = "block";
     bundleCard.style.display = "none";
@@ -728,27 +1084,17 @@ function shareToWhatsApp(message) {
   window.open(`https://wa.me/91${num}?text=${encodeURIComponent(message)}`);
 }
 
-// Basic HTML escaping for injected content
-function escapeHtml(str) {
-  return String(str || "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
 // -------------------- actions --------------------
 shareVideoBtn.onclick = () => {
   if (!activeVideo) return;
   const lang = langSel.value;
-  const title = (activeVideo.titles && (activeVideo.titles[lang] || activeVideo.titles["en"])) || activeVideo.id;
+  const title = videoTitle(activeVideo, lang) || activeVideo.id;
   const link = `${location.origin}/p/${catalog.doctor_id}/v/${activeVideo.id}/?lang=${lang}`;
   shareToWhatsApp(buildMessage(title, link, lang));
 };
 
 shareBundleBtn.onclick = () => {
-  const bundle = (bundleSel.value || "").trim();
+  const bundle = getSelectedBundle();
   if (!bundle) return;
   const lang = langSel.value;
   const title = bundleLabelByCode(bundle, lang) || bundle;
@@ -758,39 +1104,55 @@ shareBundleBtn.onclick = () => {
 
 // -------------------- event wiring --------------------
 therapySel.addEventListener("change", () => {
-  // therapy/topic filtering is for the "browse" mode; clear bundle
-  bundleSel.value = "";
   clearVideoSelection();
-  renderVideos();
+
+  repopulateTriggers({preserve: false});
+  triggerSel.value = "";
+  repopulateBundles({preserve: false});
+  bundleSel.value = "";
+
+  render();
   updateButtons();
 });
 
-topicSel.addEventListener("change", () => {
-  bundleSel.value = "";
+triggerSel.addEventListener("change", () => {
   clearVideoSelection();
-  renderVideos();
+
+  repopulateBundles({preserve: false});
+  bundleSel.value = "";
+
+  render();
   updateButtons();
 });
 
 bundleSel.addEventListener("change", () => {
-  // selecting a bundle means "show everything in this bundle"
-  therapySel.value = "";
-  topicSel.value = "";
   clearVideoSelection();
-  renderVideos();
+
+  const bcode = getSelectedBundle();
+  if (bcode) {
+    const b = bundleByCode[bcode];
+    if (b) {
+      if (b.therapy_code) therapySel.value = b.therapy_code;
+      repopulateTriggers({preserve: true});
+      if (b.trigger_code) triggerSel.value = b.trigger_code;
+      repopulateBundles({preserve: true});
+      bundleSel.value = bcode;
+    }
+  }
+
+  render();
   updateButtons();
 });
 
 langSel.addEventListener("change", () => {
-  // bundle names are localized, so repopulate bundle dropdown on language change
-  repopulateBundleSelect(true);
-  renderVideos();
+  repopulateBundles({preserve: true});
+  render();
   updateButtons();
 });
 
 searchBox.addEventListener("input", () => {
   clearVideoSelection();
-  renderVideos();
+  render();
   updateButtons();
 });
 
@@ -798,8 +1160,14 @@ waNumber.addEventListener("input", () => {
   updateButtons();
 });
 
-// Initial render
-renderVideos();
+// -------------------- init --------------------
+const therapiesSorted = (catalog.therapy_areas || []).slice().sort((a, b) => String(a.display_name || a.code || "").localeCompare(String(b.display_name || b.code || "")));
+populateSelect(therapySel, therapiesSorted, t => t.display_name || t.code, {includeAll: true, allLabel: "-- All Therapies --"});
+repopulateTriggers({preserve: false});
+repopulateBundles({preserve: false});
+
+render();
 updateButtons();
 </script>
 {% endblock %}
+
