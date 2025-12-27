@@ -6,7 +6,17 @@ from django.forms import inlineformset_factory
 from django.forms.models import BaseInlineFormSet
 
 from catalog.constants import LANGUAGE_CODES
-from catalog.models import TherapyArea, Video, VideoCluster, VideoLanguage, Trigger, TriggerCluster
+from catalog.models import (
+    TherapyArea,
+    Video,
+    VideoCluster,
+    VideoClusterLanguage,
+    VideoClusterVideo,
+    VideoLanguage,
+    VideoTriggerMap,
+    Trigger,
+    TriggerCluster,
+)
 
 
 class TherapyAreaForm(forms.ModelForm):
@@ -18,7 +28,8 @@ class TherapyAreaForm(forms.ModelForm):
 class VideoClusterForm(forms.ModelForm):
     class Meta:
         model = VideoCluster
-        fields = ["code", "display_name", "description", "is_active"]
+        # trigger is REQUIRED by the model; include it so bundle create works.
+        fields = ["code", "display_name", "description", "trigger", "is_published", "is_active"]
 
 
 class VideoForm(forms.ModelForm):
@@ -62,7 +73,6 @@ class BaseVideoLanguageFormSet(BaseInlineFormSet):
             seen.add(code)
             missing.discard(code)
 
-            # Fields are required by the model, but enforce here as well (esp. for edge cases)
             if not title or not url:
                 raise ValidationError(
                     "Please provide both Title and YouTube URL for every language."
@@ -74,7 +84,7 @@ class BaseVideoLanguageFormSet(BaseInlineFormSet):
             )
 
 
-def make_video_language_formset(extra=0):
+def make_video_language_formset(extra: int = 0):
     return inlineformset_factory(
         Video,
         VideoLanguage,
@@ -86,13 +96,62 @@ def make_video_language_formset(extra=0):
     )
 
 
+class VideoClusterLanguageForm(forms.ModelForm):
+    class Meta:
+        model = VideoClusterLanguage
+        fields = ["language_code", "name"]
+
+
+class VideoClusterVideoForm(forms.ModelForm):
+    # Make sort_order optional; model default will be used when empty.
+    sort_order = forms.IntegerField(required=False)
+
+    class Meta:
+        model = VideoClusterVideo
+        fields = ["video", "sort_order"]
+
+
+def make_cluster_language_formset(extra: int = 5):
+    """Bundle names per language."""
+    return inlineformset_factory(
+        VideoCluster,
+        VideoClusterLanguage,
+        form=VideoClusterLanguageForm,
+        fields=["language_code", "name"],
+        extra=extra,
+        can_delete=True,
+    )
+
+
+def make_cluster_video_formset(extra: int = 5):
+    """Videos inside a bundle."""
+    return inlineformset_factory(
+        VideoCluster,
+        VideoClusterVideo,
+        form=VideoClusterVideoForm,
+        fields=["video", "sort_order"],
+        extra=extra,
+        can_delete=True,
+    )
+
+
 class TriggerForm(forms.ModelForm):
     class Meta:
         model = Trigger
-        fields = ["display_name", "primary_therapy", "is_active"]
+        # code + cluster are required for creation.
+        fields = ["code", "display_name", "cluster", "primary_therapy", "doctor_trigger_label", "is_active"]
 
 
 class TriggerClusterForm(forms.ModelForm):
     class Meta:
         model = TriggerCluster
-        fields = ["display_name", "language_code", "is_active"]
+        fields = ["code", "display_name", "description", "language_code", "is_active"]
+
+
+class VideoTriggerMapForm(forms.ModelForm):
+    # Make sort_order optional; model default will be used when empty.
+    sort_order = forms.IntegerField(required=False)
+
+    class Meta:
+        model = VideoTriggerMap
+        fields = ["trigger", "video", "is_primary", "sort_order"]
