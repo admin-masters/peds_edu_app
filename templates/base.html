@@ -209,7 +209,8 @@ label {
   margin-bottom: 8px;
 }
 
-input, select, textarea {
+/* Text inputs / selects / textareas (exclude checkbox & radio) */
+input:not([type="checkbox"]):not([type="radio"]), select, textarea {
   width: 100%;
   padding: 12px;
   border: 1.5px solid var(--border-strong);
@@ -221,6 +222,26 @@ input, select, textarea {
   transition: all 0.2s ease;
   -webkit-appearance: none;
   appearance: none;
+}
+
+/* Checkbox / Radio */
+input[type="checkbox"],
+input[type="radio"] {
+  width: auto;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  -webkit-appearance: auto;
+  appearance: auto;
+  accent-color: var(--primary);
+}
+
+input[type="checkbox"]:focus,
+input[type="radio"]:focus {
+  outline: none;
+  box-shadow: var(--ring);
 }
 
 input::placeholder, 
