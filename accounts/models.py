@@ -108,8 +108,11 @@ class User(AbstractBaseUser, PermissionsMixin):
 # Clinic
 # ---------------------------------------------------------------------
 
+import random
+import string
+
 class Clinic(models.Model):
-    clinic_code = models.CharField(max_length=50, unique=True)
+    clinic_code = models.CharField(max_length=50, unique=True, blank=True, null=True)
     display_name = models.CharField(max_length=255)
     clinic_phone = models.CharField(max_length=15)
     clinic_whatsapp_number = models.CharField(max_length=10, blank=True, null=True)
@@ -117,10 +120,12 @@ class Clinic(models.Model):
     postal_code = models.CharField(max_length=6)
     state = models.CharField(max_length=64, choices=INDIA_STATE_CHOICES)
 
-    # REQUIRED by DB
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
+    # Automatically generate clinic_code if not provided
+    def save(self, *args, **kwargs):
+        if not self.clinic_code:
+            self.clinic_code = f"CLN-{''.join(random.choices(string.digits, k=4))}"
+        super(Clinic, self).save(*args, **kwargs)
+    
     def __str__(self):
         return self.display_name
 
