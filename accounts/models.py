@@ -111,8 +111,11 @@ class User(AbstractBaseUser, PermissionsMixin):
 import random
 import string
 
+import random
+import string
+
 class Clinic(models.Model):
-    clinic_code = models.CharField(max_length=50, unique=True, blank=True, null=True)
+    clinic_code = models.CharField(max_length=50, unique=True)
     display_name = models.CharField(max_length=255)
     clinic_phone = models.CharField(max_length=15)
     clinic_whatsapp_number = models.CharField(max_length=10, blank=True, null=True)
@@ -120,14 +123,19 @@ class Clinic(models.Model):
     postal_code = models.CharField(max_length=6)
     state = models.CharField(max_length=64, choices=INDIA_STATE_CHOICES)
 
-    # Automatically generate clinic_code if not provided
+    def generate_clinic_code(self):
+        """Generates a unique clinic code."""
+        return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+
     def save(self, *args, **kwargs):
+        """Ensure the clinic_code is generated if not provided."""
         if not self.clinic_code:
-            self.clinic_code = f"CLN-{''.join(random.choices(string.digits, k=4))}"
-        super(Clinic, self).save(*args, **kwargs)
+            self.clinic_code = self.generate_clinic_code()
+        super().save(*args, **kwargs)
     
     def __str__(self):
         return self.display_name
+
 
 
 # ---------------------------------------------------------------------
