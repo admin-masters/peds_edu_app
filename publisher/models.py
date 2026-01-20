@@ -45,6 +45,9 @@ class Campaign(models.Model):
     publisher_sub = models.CharField(max_length=100, blank=True, default="")
     publisher_username = models.CharField(max_length=150, blank=True, default="")
     publisher_roles = models.CharField(max_length=255, blank=True, default="")
+    # Campaign messaging (new fields)
+    email_registration = models.TextField(blank=True, default="")
+    wa_addition = models.TextField(blank=True, default="")
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
