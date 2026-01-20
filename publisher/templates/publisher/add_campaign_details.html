@@ -75,6 +75,24 @@
       </div>
     </div>
 
+    {# --- NEW FIELDS --- #}
+    <div style="margin-top: 14px;">
+      <label for="{{ form.email_registration.id_for_label }}">{{ form.email_registration.label }}</label>
+      {{ form.email_registration }}
+      {% if form.email_registration.errors %}
+        <div class="message error">{{ form.email_registration.errors }}</div>
+      {% endif %}
+    </div>
+
+    <div style="margin-top: 14px;">
+      <label for="{{ form.wa_addition.id_for_label }}">{{ form.wa_addition.label }}</label>
+      {{ form.wa_addition }}
+      {% if form.wa_addition.errors %}
+        <div class="message error">{{ form.wa_addition.errors }}</div>
+      {% endif %}
+    </div>
+    {# ------------------ #}
+
     <div class="row two" style="margin-top: 14px;">
       <div>
         <label for="{{ form.banner_small.id_for_label }}">{{ form.banner_small.label }}</label>
