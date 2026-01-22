@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 import json
 from typing import Any, Dict, List, Set
 from urllib.parse import urlencode
@@ -76,7 +75,7 @@ def _capture_campaign_meta(request: HttpRequest, campaign_id: str | None) -> dic
 
     return meta
 
-    def _render_campaign_text_template(template: str, *, doctor_name: str, clinic_link: str, setup_link: str = "") -> str:
+def _render_campaign_text_template(template: str, *, doctor_name: str, clinic_link: str, setup_link: str = "") -> str:
     """
     Supports placeholders used historically and those described in the spec.
     """
@@ -103,9 +102,9 @@ def _capture_campaign_meta(request: HttpRequest, campaign_id: str | None) -> dic
     return text
 
 
-    @publisher_required
-    @require_http_methods(["GET", "POST"])
-    def field_rep_landing_page(request: HttpRequest) -> HttpResponse:
+@publisher_required
+@require_http_methods(["GET", "POST"])
+def field_rep_landing_page(request: HttpRequest) -> HttpResponse:
         """
         JWT-gated page (via publisher_required) for field reps to:
         - enforce doctors_supported limit (from publisher_campaign)
