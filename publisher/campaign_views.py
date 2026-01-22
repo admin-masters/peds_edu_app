@@ -420,9 +420,9 @@ def publisher_landing_page(request: HttpRequest) -> HttpResponse:
 
 
 
-    @publisher_required
-    @require_http_methods(["GET", "POST"])
-    def add_campaign_details(request: HttpRequest) -> HttpResponse:
+@publisher_required
+@require_http_methods(["GET", "POST"])
+def add_campaign_details(request: HttpRequest) -> HttpResponse:
         claims = get_publisher_claims(request) or {}
     
         campaign_id = (
