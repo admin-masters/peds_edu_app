@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List, Set
 from urllib.parse import urlencode
-
+from django import forms
 from django.contrib import messages
 from django.db import models, transaction
 from django.db.models import Q
@@ -37,6 +37,47 @@ from .models import Campaign
 # -----------------------------
 # Helpers
 # -----------------------------
+SESSION_CAMPAIGN_META_BY_CAMPAIGN_KEY = "publisher_campaign_meta_by_campaign"
+
+def _capture_campaign_meta(request: HttpRequest, campaign_id: str | None) -> dict[str, Any]:
+    """
+    Capture extra values coming from Project1 and persist them in session.
+    Stored per-campaign to avoid collisions.
+    """
+    meta_by_campaign = request.session.get(SESSION_CAMPAIGN_META_BY_CAMPAIGN_KEY) or {}
+    meta = meta_by_campaign.get(campaign_id, {}) if campaign_id else {}
+
+    param_names = [
+        "num_doctors_supported",
+        "name",
+        "company_name",
+        "contact_person_name",
+        "contact_person_phone",
+        "contact_person_email",
+    ]
+
+    for key in param_names:
+        v = request.GET.get(key)
+        if v is None:
+            v = request.GET.get(key.replace("_", "-"))  # tolerate hyphenated keys
+        if v is not None:
+            meta[key] = str(v).strip()
+
+    # normalize int
+    try:
+        meta["num_doctors_supported"] = int(meta.get("num_doctors_supported")) if meta.get("num_doctors_supported") not in (None, "") else None
+    except Exception:
+        meta["num_doctors_supported"] = None
+
+    if campaign_id:
+        meta_by_campaign[campaign_id] = meta
+        request.session[SESSION_CAMPAIGN_META_BY_CAMPAIGN_KEY] = meta_by_campaign
+        request.session.modified = True
+
+    return meta
+
+
+
 
 def _video_title_en(video: Video) -> str:
     # best-effort English title fallback
@@ -150,16 +191,6 @@ def _generate_unique_cluster_code(name: str) -> str:
 @publisher_required
 @require_GET
 def publisher_landing_page(request: HttpRequest) -> HttpResponse:
-    """
-    URL: /publisher-landing-page/?token=...&campaign-id=...
-
-    - Requires master JWT (or existing publisher session)
-    - Creates session (done by decorator if token present)
-    - Shows 2 options:
-      1) Add details for this campaign
-      2) Edit details for any other campaign
-    """
-
     claims = get_publisher_claims(request) or {}
 
     campaign_id = (
@@ -167,19 +198,17 @@ def publisher_landing_page(request: HttpRequest) -> HttpResponse:
         or request.GET.get("campaign_id")
         or request.session.get(SESSION_CAMPAIGN_KEY)
         or ""
-    )
-    if campaign_id:
-        request.session[SESSION_CAMPAIGN_KEY] = campaign_id
+    ).strip() or None
 
-    # Security: if token/jwt is present in URL query, redirect to remove it
-    if request.GET.get("jwt") or request.GET.get("token") or request.GET.get("access_token"):
-        params = {}
-        if campaign_id:
-            params["campaign-id"] = campaign_id
-        url = reverse("campaign_publisher:publisher_landing_page")
-        if params:
-            url = f"{url}?{urlencode(params)}"
-        return redirect(url)
+    # Capture extra values from Project1 into session (per campaign)
+    campaign_meta = _capture_campaign_meta(request, campaign_id)
+
+    # (extra safety) Remove token from URL if present
+    if any(k in request.GET for k in ("token", "jwt", "access_token")):
+        q = request.GET.copy()
+        for k in ("token", "jwt", "access_token"):
+            q.pop(k, None)
+        return redirect(f"{request.path}?{q.urlencode()}") if q else redirect(request.path)
 
     return render(
         request,
@@ -187,155 +216,167 @@ def publisher_landing_page(request: HttpRequest) -> HttpResponse:
         {
             "publisher": claims,
             "campaign_id": campaign_id,
+            "campaign_meta": campaign_meta,
             "show_auth_links": False,
         },
     )
 
 
-@publisher_required
-@require_http_methods(["GET", "POST"])
-def add_campaign_details(request: HttpRequest) -> HttpResponse:
-    claims = get_publisher_claims(request) or {}
 
-    campaign_id = (
-        request.GET.get("campaign-id")
-        or request.GET.get("campaign_id")
-        or request.POST.get("campaign_id")
-        or request.session.get(SESSION_CAMPAIGN_KEY)
-    )
-    if not campaign_id:
-        return HttpResponseBadRequest("campaign-id missing")
-
-    request.session[SESSION_CAMPAIGN_KEY] = campaign_id
-
-    existing = Campaign.objects.filter(campaign_id=campaign_id).first()
-    if existing and request.method == "GET":
-        messages.info(request, "Campaign already has details. Redirected to edit screen.")
-        return redirect(
-            reverse("campaign_publisher:edit_campaign_details", kwargs={"campaign_id": campaign_id})
+    @publisher_required
+    @require_http_methods(["GET", "POST"])
+    def add_campaign_details(request: HttpRequest) -> HttpResponse:
+        claims = get_publisher_claims(request) or {}
+    
+        campaign_id = (
+            request.GET.get("campaign-id")
+            or request.GET.get("campaign_id")
+            or request.POST.get("campaign_id")
+            or request.session.get(SESSION_CAMPAIGN_KEY)
         )
-
-    if request.method == "POST":
-        form = CampaignCreateForm(request.POST, request.FILES)
-        if form.is_valid():
-            # 5.1 Check if the new video cluster name already exists
-            new_cluster_name = form.cleaned_data["new_video_cluster_name"]
-            if VideoClusterLanguage.objects.filter(name__iexact=new_cluster_name).exists():
-                messages.error(
-                    request,
-                    "video cluster name already exists.  Write a different name",
-                )
-                return render(
-                    request,
-                    "publisher/add_campaign_details.html",
-                    {
-                        "form": form,
-                        "campaign_id": campaign_id,
-                        "publisher": claims,
-                        "show_auth_links": False,
-                    },
-                )
-
-            # Expand selection into final list of videos
-            selected_items = json.loads(form.cleaned_data["selected_items_json"])
-            video_ids = _expand_selected_items_to_video_ids(selected_items)
-            if not video_ids:
-                form.add_error(None, "Please select at least one valid video or video-cluster.")
-                return render(
-                    request,
-                    "publisher/add_campaign_details.html",
-                    {
-                        "form": form,
-                        "campaign_id": campaign_id,
-                        "publisher": claims,
-                        "show_auth_links": False,
-                    },
-                )
-
-            # Also block duplicates by campaign_id
-            if Campaign.objects.filter(campaign_id=campaign_id).exists():
-                messages.error(request, "Campaign already exists. Use edit instead.")
-                return redirect(
-                    reverse("campaign_publisher:edit_campaign_details", kwargs={"campaign_id": campaign_id})
-                )
-
-            publisher_sub = str(claims.get("sub") or "")
-            publisher_username = str(claims.get("username") or "")
-            publisher_roles = ",".join([str(r) for r in (claims.get("roles") or [])])
-
-            with transaction.atomic():
-                # 5.3 Create a new video cluster
-                trigger = _get_or_create_brand_trigger()
-                cluster_code = _generate_unique_cluster_code(new_cluster_name)
-
-                cluster = VideoCluster.objects.create(
-                    code=cluster_code,
-                    display_name=new_cluster_name,
-                    description="",
-                    trigger=trigger,
-                    sort_order=0,
-                    is_published=True,
-                    search_keywords=new_cluster_name,
-                    is_active=True,
-                )
-
-                VideoClusterLanguage.objects.create(
-                    video_cluster=cluster,
-                    language_code="en",
-                    name=new_cluster_name,
-                )
-
-                videos = list(Video.objects.filter(id__in=video_ids).order_by("code"))
-                for idx, v in enumerate(videos, start=1):
-                    VideoClusterVideo.objects.create(
-                        video_cluster=cluster,
-                        video=v,
-                        sort_order=idx,
-                    )
-
-                # 5.2 Insert all details into campaigns-table
-                Campaign.objects.create(
-                    campaign_id=campaign_id,
-                    new_video_cluster_name=new_cluster_name,
-                    selection_json=form.cleaned_data["selected_items_json"],
-                    doctors_supported=form.cleaned_data["doctors_supported"],
-                    banner_small=form.cleaned_data["banner_small"],
-                    banner_large=form.cleaned_data["banner_large"],
-                    banner_target_url=form.cleaned_data["banner_target_url"],
-                    start_date=form.cleaned_data["start_date"],
-                    end_date=form.cleaned_data["end_date"],
-                    video_cluster=cluster,
-                    publisher_sub=publisher_sub,
-                    publisher_username=publisher_username,
-                    publisher_roles=publisher_roles,
-                    email_registration=form.cleaned_data["email_registration"],
-                    wa_addition=form.cleaned_data["wa_addition"],
-                )
-
-            messages.success(request, "Campaign saved. Video cluster created successfully.")
-
+        if not campaign_id:
+            return HttpResponseBadRequest("campaign-id missing")
+    
+        request.session[SESSION_CAMPAIGN_KEY] = campaign_id
+    
+        existing = Campaign.objects.filter(campaign_id=campaign_id).first()
+        if existing and request.method == "GET":
+            messages.info(request, "Campaign already has details. Redirected to edit screen.")
             return redirect(
-                f"{reverse('campaign_publisher:publisher_landing_page')}?{urlencode({'campaign-id': campaign_id})}"
+                reverse("campaign_publisher:edit_campaign_details", kwargs={"campaign_id": campaign_id})
             )
-    else:
-        form = CampaignCreateForm(initial={
-          "campaign_id": campaign_id,
-          "selected_items_json": "[]",
-          "email_registration": "",
-          "wa_addition": "",})
-  
-
-    return render(
-        request,
-        "publisher/add_campaign_details.html",
-        {
-            "form": form,
-            "campaign_id": campaign_id,
-            "publisher": claims,
-            "show_auth_links": False,
-        },
-    )
-
+    
+        if request.method == "POST":
+            form = CampaignCreateForm(request.POST, request.FILES)
+            if form.is_valid():
+                # 5.1 Check if the new video cluster name already exists
+                new_cluster_name = form.cleaned_data["new_video_cluster_name"]
+                if VideoClusterLanguage.objects.filter(name__iexact=new_cluster_name).exists():
+                    messages.error(
+                        request,
+                        "video cluster name already exists.  Write a different name",
+                    )
+                    return render(
+                        request,
+                        "publisher/add_campaign_details.html",
+                        {
+                            "form": form,
+                            "campaign_id": campaign_id,
+                            "publisher": claims,
+                            "show_auth_links": False,
+                        },
+                    )
+    
+                # Expand selection into final list of videos
+                selected_items = json.loads(form.cleaned_data["selected_items_json"])
+                video_ids = _expand_selected_items_to_video_ids(selected_items)
+                if not video_ids:
+                    form.add_error(None, "Please select at least one valid video or video-cluster.")
+                    return render(
+                        request,
+                        "publisher/add_campaign_details.html",
+                        {
+                            "form": form,
+                            "campaign_id": campaign_id,
+                            "publisher": claims,
+                            "show_auth_links": False,
+                        },
+                    )
+    
+                # Also block duplicates by campaign_id
+                if Campaign.objects.filter(campaign_id=campaign_id).exists():
+                    messages.error(request, "Campaign already exists. Use edit instead.")
+                    return redirect(
+                        reverse("campaign_publisher:edit_campaign_details", kwargs={"campaign_id": campaign_id})
+                    )
+    
+                publisher_sub = str(claims.get("sub") or "")
+                publisher_username = str(claims.get("username") or "")
+                publisher_roles = ",".join([str(r) for r in (claims.get("roles") or [])])
+    
+                with transaction.atomic():
+                    # 5.3 Create a new video cluster
+                    trigger = _get_or_create_brand_trigger()
+                    cluster_code = _generate_unique_cluster_code(new_cluster_name)
+    
+                    cluster = VideoCluster.objects.create(
+                        code=cluster_code,
+                        display_name=new_cluster_name,
+                        description="",
+                        trigger=trigger,
+                        sort_order=0,
+                        is_published=True,
+                        search_keywords=new_cluster_name,
+                        is_active=True,
+                    )
+    
+                    VideoClusterLanguage.objects.create(
+                        video_cluster=cluster,
+                        language_code="en",
+                        name=new_cluster_name,
+                    )
+    
+                    videos = list(Video.objects.filter(id__in=video_ids).order_by("code"))
+                    for idx, v in enumerate(videos, start=1):
+                        VideoClusterVideo.objects.create(
+                            video_cluster=cluster,
+                            video=v,
+                            sort_order=idx,
+                        )
+    
+                    # 5.2 Insert all details into campaigns-table
+                    Campaign.objects.create(
+                        campaign_id=campaign_id,
+                        new_video_cluster_name=new_cluster_name,
+                        selection_json=form.cleaned_data["selected_items_json"],
+                        doctors_supported=form.cleaned_data["doctors_supported"],
+                        banner_small=form.cleaned_data["banner_small"],
+                        banner_large=form.cleaned_data["banner_large"],
+                        banner_target_url=form.cleaned_data["banner_target_url"],
+                        start_date=form.cleaned_data["start_date"],
+                        end_date=form.cleaned_data["end_date"],
+                        video_cluster=cluster,
+                        publisher_sub=publisher_sub,
+                        publisher_username=publisher_username,
+                        publisher_roles=publisher_roles,
+                        email_registration=form.cleaned_data["email_registration"],
+                        wa_addition=form.cleaned_data["wa_addition"],
+                    )
+    
+                messages.success(request, "Campaign saved. Video cluster created successfully.")
+    
+                return redirect(
+                    f"{reverse('campaign_publisher:publisher_landing_page')}?{urlencode({'campaign-id': campaign_id})}"
+                )
+        else:
+            initial = {
+                "campaign_id": campaign_id,
+                "selected_items_json": "[]",
+                "email_registration": "",
+                "wa_addition": "",
+            }
+    
+            # -------------------------------------------------------------
+            # Prefill doctors_supported from Project1 if provided
+            # -------------------------------------------------------------
+            meta_by_campaign = request.session.get(SESSION_CAMPAIGN_META_BY_CAMPAIGN_KEY) or {}
+            meta = meta_by_campaign.get(campaign_id, {}) if campaign_id else {}
+            if meta.get("num_doctors_supported") is not None:
+                initial["doctors_supported"] = meta["num_doctors_supported"]
+    
+            form = CampaignCreateForm(initial=initial)
+    
+        return render(
+            request,
+            "publisher/add_campaign_details.html",
+            {
+                "form": form,
+                "campaign_id": campaign_id,
+                "publisher": claims,
+                "show_auth_links": False,
+            },
+        )
+    
 
 @publisher_required
 @require_GET
