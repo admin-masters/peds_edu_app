@@ -6,6 +6,13 @@ from typing import Any, Dict, List
 from django import forms
 from django.core.exceptions import ValidationError
 
+class FieldRepWhatsAppForm(forms.Form):
+    whatsapp_number = forms.CharField(
+        label="Enter doctor’s WhatsApp number",
+        max_length=20,
+        required=True,
+        widget=forms.TextInput(attrs={"placeholder": "e.g. 9876543210", "inputmode": "numeric"}),
+    )
 
 class CampaignCreateForm(forms.Form):
     campaign_id = forms.CharField(widget=forms.HiddenInput())
