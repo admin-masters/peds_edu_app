@@ -37,6 +37,13 @@ from .models import Campaign
 # Helpers
 # -----------------------------
 SESSION_CAMPAIGN_META_BY_CAMPAIGN_KEY = "publisher_campaign_meta_by_campaign"
+class FieldRepWhatsAppForm(forms.Form):
+    whatsapp_number = forms.CharField(
+        label="Enter doctor’s WhatsApp number",
+        max_length=20,
+        required=True,
+        widget=forms.TextInput(attrs={"placeholder": "e.g. 9876543210", "inputmode": "numeric"}),
+    )
 
 def _capture_campaign_meta(request: HttpRequest, campaign_id: str | None) -> dict[str, Any]:
     """
