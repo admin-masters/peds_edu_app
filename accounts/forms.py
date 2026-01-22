@@ -5,6 +5,7 @@ from django import forms
 from django.contrib.auth.forms import AuthenticationForm, SetPasswordForm
 from django.core.validators import RegexValidator
 
+
 import re
 from django import forms
 from django.core.validators import RegexValidator
@@ -119,3 +120,23 @@ class DoctorRegistrationForm(forms.Form):
             except IntegrityError:
                 # ignore duplicates
                 pass
+
+class DoctorClinicDetailsForm(forms.Form):
+    doctor_id = forms.CharField(label="Doctor ID", max_length=12, required=True, widget=forms.TextInput(attrs={"readonly": "readonly"}))
+    full_name = forms.CharField(label="Full Name", max_length=255, required=True)
+    email = forms.EmailField(label="Email", required=True)
+    whatsapp_number = forms.CharField(label="WhatsApp Number", max_length=20, required=True)
+    clinic_number = forms.CharField(label="Clinic Phone Number", max_length=20, required=True)
+    clinic_whatsapp_number = forms.CharField(label="Clinic WhatsApp Number", max_length=20, required=True)
+    imc_number = forms.CharField(label="IMC Registration Number", max_length=20, required=True)
+    postal_code = forms.CharField(label="Postal Code (PIN)", max_length=6, required=True)
+    address_text = forms.CharField(label="Clinic Address", required=True, widget=forms.Textarea(attrs={"rows": 4}))
+    photo = forms.ImageField(label="Doctor Photo (optional)", required=False)
+
+
+class EmailAuthenticationForm(AuthenticationForm):
+    username = forms.EmailField(label="Email")
+
+
+class DoctorSetPasswordForm(SetPasswordForm):
+    pass
