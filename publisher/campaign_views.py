@@ -607,6 +607,7 @@ def campaign_list(request: HttpRequest) -> HttpResponse:
     )
 
 
+@publisher_required
 @require_http_methods(["GET", "POST"])
 def edit_campaign_details(request: HttpRequest, campaign_id: str) -> HttpResponse:
     claims = get_publisher_claims(request) or {}
