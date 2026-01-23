@@ -291,7 +291,7 @@ MASTER_DB_ALIAS = os.getenv("MASTER_DB_ALIAS", "master").strip()
 # AuthorizedPublisher table
 MASTER_DB_AUTH_PUBLISHER_TABLE = os.getenv(
     "MASTER_DB_AUTH_PUBLISHER_TABLE",
-    "publisher_authorizedpublisher",   # <-- CHANGE to real table name
+    "campaign_authorizedpublisher",   # <-- CHANGE to real table name
 ).strip()
 MASTER_DB_AUTH_PUBLISHER_EMAIL_COLUMN = os.getenv(
     "MASTER_DB_AUTH_PUBLISHER_EMAIL_COLUMN",
@@ -301,7 +301,7 @@ MASTER_DB_AUTH_PUBLISHER_EMAIL_COLUMN = os.getenv(
 # FieldRep table
 MASTER_DB_FIELD_REP_TABLE = os.getenv(
     "MASTER_DB_FIELD_REP_TABLE",
-    "publisher_fieldrep",              # <-- CHANGE to real table name
+    "campaign_fieldrep",              # <-- CHANGE to real table name
 ).strip()
 MASTER_DB_FIELD_REP_PK_COLUMN = os.getenv("MASTER_DB_FIELD_REP_PK_COLUMN", "id").strip()
 MASTER_DB_FIELD_REP_EXTERNAL_ID_COLUMN = os.getenv(
@@ -315,7 +315,7 @@ MASTER_DB_FIELD_REP_PHONE_COLUMN = os.getenv("MASTER_DB_FIELD_REP_PHONE_COLUMN",
 # Campaign table (the admin project’s campaign master)
 MASTER_DB_CAMPAIGN_TABLE = os.getenv(
     "MASTER_DB_CAMPAIGN_TABLE",
-    "publisher_campaign",              # <-- CHANGE to real table name (could be schema qualified)
+    "campaign_campaign",              # <-- CHANGE to real table name (could be schema qualified)
 ).strip()
 MASTER_DB_CAMPAIGN_ID_COLUMN = os.getenv("MASTER_DB_CAMPAIGN_ID_COLUMN", "campaign_id").strip()
 MASTER_DB_CAMPAIGN_DOCTORS_SUPPORTED_COLUMN = os.getenv("MASTER_DB_CAMPAIGN_DOCTORS_SUPPORTED_COLUMN", "doctors_supported").strip()
