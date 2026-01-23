@@ -301,7 +301,7 @@ MASTER_DB_AUTH_PUBLISHER_EMAIL_COLUMN = os.getenv(
 # FieldRep table
 MASTER_DB_FIELD_REP_TABLE = os.getenv(
     "MASTER_DB_FIELD_REP_TABLE",
-    "campaign_fieldrep",              # <-- CHANGE to real table name
+    "campaign_campaignfieldrep;",              # <-- CHANGE to real table name
 ).strip()
 MASTER_DB_FIELD_REP_PK_COLUMN = os.getenv("MASTER_DB_FIELD_REP_PK_COLUMN", "id").strip()
 MASTER_DB_FIELD_REP_EXTERNAL_ID_COLUMN = os.getenv(
@@ -327,9 +327,9 @@ MASTER_DB_CAMPAIGN_EMAIL_REGISTRATION_COLUMN = os.getenv("MASTER_DB_CAMPAIGN_EMA
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://portal.cpdinclinic.co.in").rstrip("/")
 
 
-# ------------------------------------------------------------
-# TEMPORARY: Hardcoded MASTER DB config (do not commit secrets)
-# ------------------------------------------------------------
+# -----------------------------
+# MASTER DB connection (hardcoded)
+# -----------------------------
 MASTER_DB_ALIAS = "master"
 
 DATABASES[MASTER_DB_ALIAS] = {
@@ -339,10 +339,27 @@ DATABASES[MASTER_DB_ALIAS] = {
     "PASSWORD": "Hemsod-vytsew-7qypxa",
     "HOST": "new-forms-rds.cbnobb8kfeuq.ap-south-1.rds.amazonaws.com",
     "PORT": "3306",
-    "OPTIONS": {
-        "charset": "utf8mb4",
-    },
+    "OPTIONS": {"charset": "utf8mb4"},
+    "CONN_MAX_AGE": 60,
 }
 
-# (Optional) Keep connections open a bit to reduce reconnect overhead
-DATABASES[MASTER_DB_ALIAS]["CONN_MAX_AGE"] = 60
+# -----------------------------
+# MASTER TABLE MAPPINGS (from your db output)
+# -----------------------------
+MASTER_DB_FIELD_REP_TABLE = "campaign_fieldrep"
+MASTER_DB_FIELD_REP_PK_COLUMN = "id"
+MASTER_DB_FIELD_REP_USER_ID_COLUMN = "user_id"
+MASTER_DB_FIELD_REP_EXTERNAL_ID_COLUMN = "brand_supplied_field_rep_id"
+MASTER_DB_FIELD_REP_ACTIVE_COLUMN = "is_active"
+MASTER_DB_FIELD_REP_FULL_NAME_COLUMN = "full_name"
+MASTER_DB_FIELD_REP_PHONE_COLUMN = "phone_number"
+
+# Join table: CampaignFieldRep
+MASTER_DB_CAMPAIGN_FIELD_REP_TABLE = "campaign_campaignfieldrep"
+MASTER_DB_CAMPAIGN_FIELD_REP_PK_COLUMN = "id"
+MASTER_DB_CAMPAIGN_FIELD_REP_CAMPAIGN_COLUMN = "campaign_id"
+MASTER_DB_CAMPAIGN_FIELD_REP_FIELD_REP_COLUMN = "field_rep_id"
+
+# (Optional) public base url
+PUBLIC_BASE_URL = "https://portal.cpdinclinic.co.in"
+

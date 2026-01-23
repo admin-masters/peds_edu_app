@@ -119,10 +119,15 @@ def field_rep_landing_page(request: HttpRequest) -> HttpResponse:
     """
     Field rep landing page with verbose print logs.
 
+    Fixes:
+      - field_rep_id may be a JOIN TABLE PK (campaign_campaignfieldrep.id), not FieldRep.id
+      - campaign_id in join table is stored without hyphens; normalize before queries
+      - enforce that field rep is linked to campaign via campaign_campaignfieldrep
+
     Logs:
       - request id, method, path
       - parsed campaign_id / field_rep_id
-      - field rep validation result
+      - field rep resolution path (direct vs join-table)
       - campaign fetch result
       - enrollment counts and limit checks
       - POST validation, doctor lookup result
@@ -132,7 +137,9 @@ def field_rep_landing_page(request: HttpRequest) -> HttpResponse:
     import time
     import uuid
     import traceback
+    import re
     from urllib.parse import urlencode as _urlencode
+    from django.db import connections
 
     # -------------------------
     # lightweight JSON logger
@@ -171,8 +178,11 @@ def field_rep_landing_page(request: HttpRequest) -> HttpResponse:
         try:
             print(json.dumps(payload, default=str))
         except Exception:
-            # last-resort plain print
             print(f"[req_id={req_id}] {event} {data}")
+
+    def _normalize_campaign_id_for_master(raw: str) -> str:
+        # Join table stores campaign_id without hyphens (32 hex)
+        return (raw or "").strip().replace("-", "")
 
     _plog("field_rep_landing.start")
 
@@ -182,9 +192,12 @@ def field_rep_landing_page(request: HttpRequest) -> HttpResponse:
     campaign_id = (request.GET.get("campaign-id") or request.GET.get("campaign_id") or "").strip()
     field_rep_id = (request.GET.get("field_rep_id") or request.GET.get("field-rep-id") or "").strip()
 
+    campaign_id_db = _normalize_campaign_id_for_master(campaign_id)
+
     _plog(
         "field_rep_landing.params",
         campaign_id=campaign_id,
+        campaign_id_db=campaign_id_db,
         field_rep_id=field_rep_id,
         query_keys=list(request.GET.keys()),
     )
@@ -205,35 +218,95 @@ def field_rep_landing_page(request: HttpRequest) -> HttpResponse:
         )
 
     # -------------------------
-    # Validate field rep (MASTER DB)
+    # Resolve Field Rep (MASTER DB)
     # -------------------------
-    try:
-        fr = master_db.get_field_rep(field_rep_id)
-        _plog(
-            "field_rep_landing.field_rep.lookup",
-            found=bool(fr),
-            is_active=(bool(fr.is_active) if fr else None),
-            master_field_rep_pk=(fr.id if fr else None),
-            master_brand_supplied_field_rep_id=(fr.brand_supplied_field_rep_id if fr else None),
-        )
-    except Exception as e:
-        _plog(
-            "field_rep_landing.field_rep.lookup_error",
-            error=str(e),
-            traceback=traceback.format_exc()[-2000:],  # cap length
-        )
-        return render(
-            request,
-            "publisher/field_rep_landing_page.html",
-            {
-                "form": FieldRepWhatsAppForm(),
-                "campaign_id": campaign_id,
-                "field_rep_id": field_rep_id,
-                "limit_reached": True,
-                "limit_message": "Master DB error while validating field rep id.",
-            },
-            status=500,
-        )
+    master_alias = getattr(settings, "MASTER_DB_ALIAS", "master")
+    master_conn = connections[master_alias]
+
+    # Master table names (hardcoded in settings per your latest DB)
+    join_table = getattr(settings, "MASTER_DB_CAMPAIGN_FIELD_REP_TABLE", "campaign_campaignfieldrep")
+    join_pk_col = getattr(settings, "MASTER_DB_CAMPAIGN_FIELD_REP_PK_COLUMN", "id")
+    join_campaign_col = getattr(settings, "MASTER_DB_CAMPAIGN_FIELD_REP_CAMPAIGN_COLUMN", "campaign_id")
+    join_fieldrep_col = getattr(settings, "MASTER_DB_CAMPAIGN_FIELD_REP_FIELD_REP_COLUMN", "field_rep_id")
+
+    # Try multiple candidates (direct), then fallback to join-table id resolution
+    lookup_candidates = [field_rep_id]
+
+    # If SSO identity exists in session, try token sub too (optional)
+    session_key = getattr(settings, "SSO_SESSION_KEY_IDENTITY", "sso_identity")
+    ident = request.session.get(session_key)
+    sub = ""
+    if isinstance(ident, dict):
+        sub = (ident.get("sub") or "").strip()
+        if sub and sub not in lookup_candidates:
+            lookup_candidates.append(sub)
+        m = re.search(r"(\d+)$", sub)
+        if m and m.group(1) not in lookup_candidates:
+            lookup_candidates.append(m.group(1))
+
+    fr = None
+    fr_resolution = {"path": None}
+
+    # ---- (A) Direct lookup in FieldRep table via master_db.get_field_rep()
+    for cand in lookup_candidates:
+        if not cand:
+            continue
+        try:
+            tmp = master_db.get_field_rep(cand)
+        except Exception as e:
+            _plog(
+                "field_rep_landing.field_rep.direct_lookup_error",
+                candidate=cand,
+                error=str(e),
+                traceback=traceback.format_exc()[-2000:],
+            )
+            tmp = None
+
+        if tmp:
+            fr = tmp
+            fr_resolution = {"path": "direct", "candidate": cand}
+            break
+
+    # ---- (B) If not found, treat URL field_rep_id as JOIN TABLE PK
+    join_resolved_fieldrep_id = None
+    if fr is None and field_rep_id.isdigit():
+        try:
+            sql = (
+                f"SELECT {join_fieldrep_col} "
+                f"FROM {join_table} "
+                f"WHERE {join_pk_col} = %s AND {join_campaign_col} = %s "
+                f"LIMIT 1"
+            )
+            with master_conn.cursor() as cur:
+                cur.execute(sql, [int(field_rep_id), campaign_id_db])
+                row = cur.fetchone()
+
+            if row:
+                join_resolved_fieldrep_id = str(row[0])
+                fr = master_db.get_field_rep(join_resolved_fieldrep_id)
+                fr_resolution = {
+                    "path": "join_pk",
+                    "join_pk": field_rep_id,
+                    "resolved_fieldrep_id": join_resolved_fieldrep_id,
+                }
+        except Exception as e:
+            _plog(
+                "field_rep_landing.field_rep.join_lookup_error",
+                join_pk=field_rep_id,
+                campaign_id_db=campaign_id_db,
+                error=str(e),
+                traceback=traceback.format_exc()[-2000:],
+            )
+
+    _plog(
+        "field_rep_landing.field_rep.resolution",
+        candidates=lookup_candidates,
+        found=bool(fr),
+        resolution=fr_resolution,
+        is_active=(bool(fr.is_active) if fr else None),
+        master_field_rep_id=(fr.id if fr else None),
+        master_brand_supplied_field_rep_id=(fr.brand_supplied_field_rep_id if fr else None),
+    )
 
     if not fr or not fr.is_active:
         _plog("field_rep_landing.unauthorized.invalid_or_inactive_field_rep")
@@ -250,15 +323,62 @@ def field_rep_landing_page(request: HttpRequest) -> HttpResponse:
             status=401,
         )
 
+    # ---- Enforce: FieldRep must be linked to Campaign via join table
+    # (campaign_campaignfieldrep has campaign_id + field_rep_id)
+    try:
+        fr_id_int = int(fr.id)
+        sql = (
+            f"SELECT 1 FROM {join_table} "
+            f"WHERE {join_campaign_col} = %s AND {join_fieldrep_col} = %s "
+            f"LIMIT 1"
+        )
+        with master_conn.cursor() as cur:
+            cur.execute(sql, [campaign_id_db, fr_id_int])
+            linked = cur.fetchone() is not None
+    except Exception as e:
+        _plog(
+            "field_rep_landing.field_rep.link_check_error",
+            error=str(e),
+            traceback=traceback.format_exc()[-2000:],
+        )
+        linked = False
+
+    _plog(
+        "field_rep_landing.field_rep.link_check",
+        campaign_id_db=campaign_id_db,
+        field_rep_id_resolved=(fr.id if fr else None),
+        linked=linked,
+    )
+
+    if not linked:
+        _plog("field_rep_landing.unauthorized.field_rep_not_linked_to_campaign")
+        return render(
+            request,
+            "publisher/field_rep_landing_page.html",
+            {
+                "form": FieldRepWhatsAppForm(),
+                "campaign_id": campaign_id,
+                "field_rep_id": field_rep_id,
+                "limit_reached": True,
+                "limit_message": "This field rep is not authorized for this campaign.",
+            },
+            status=401,
+        )
+
+    # Stable downstream field rep identifier for enrollment + register redirect
+    downstream_field_rep_id = (fr.brand_supplied_field_rep_id or "").strip() or str(fr.id)
+
     # -------------------------
     # Fetch campaign (MASTER DB)
     # -------------------------
     try:
-        campaign = master_db.get_campaign(campaign_id)
+        # Prefer normalized campaign id (no hyphens)
+        campaign = master_db.get_campaign(campaign_id_db) or master_db.get_campaign(campaign_id)
         _plog(
             "field_rep_landing.campaign.lookup",
             found=bool(campaign),
             doctors_supported=(campaign.doctors_supported if campaign else None),
+            used_campaign_id=("normalized" if campaign and campaign.campaign_id == campaign_id_db else "raw_or_unknown"),
         )
     except Exception as e:
         _plog(
@@ -300,7 +420,20 @@ def field_rep_landing_page(request: HttpRequest) -> HttpResponse:
     doctors_supported = int(campaign.doctors_supported or 0)
 
     try:
-        enrolled_count = master_db.count_campaign_enrollments(campaign_id)
+        # Prefer normalized id (matches your join table storage)
+        enrolled_count_norm = master_db.count_campaign_enrollments(campaign_id_db)
+        enrolled_count_raw = 0
+        if campaign_id_db != campaign_id:
+            enrolled_count_raw = master_db.count_campaign_enrollments(campaign_id)
+        enrolled_count = max(enrolled_count_norm, enrolled_count_raw)
+
+        _plog(
+            "field_rep_landing.enrollment_count",
+            campaign_id_db=campaign_id_db,
+            enrolled_count_norm=enrolled_count_norm,
+            enrolled_count_raw=enrolled_count_raw,
+            enrolled_count=enrolled_count,
+        )
     except Exception as e:
         _plog(
             "field_rep_landing.enrollment_count_error",
@@ -436,17 +569,18 @@ def field_rep_landing_page(request: HttpRequest) -> HttpResponse:
 
     if doctor:
         # Ensure enrollment exists in master DB
-        registered_by = fr.brand_supplied_field_rep_id or field_rep_id
+        # IMPORTANT: use normalized campaign id + stable registered_by
+        registered_by = downstream_field_rep_id
         try:
             master_db.ensure_enrollment(
                 doctor_id=doctor.doctor_id,
-                campaign_id=campaign_id,
+                campaign_id=campaign_id_db,
                 registered_by=registered_by,
             )
             _plog(
                 "field_rep_landing.enrollment.ensure",
                 doctor_id=doctor.doctor_id,
-                campaign_id=campaign_id,
+                campaign_id=campaign_id_db,
                 registered_by=registered_by,
                 status="ok",
             )
@@ -454,7 +588,7 @@ def field_rep_landing_page(request: HttpRequest) -> HttpResponse:
             _plog(
                 "field_rep_landing.enrollment.ensure_error",
                 doctor_id=doctor.doctor_id,
-                campaign_id=campaign_id,
+                campaign_id=campaign_id_db,
                 registered_by=registered_by,
                 error=str(e),
                 traceback=traceback.format_exc()[-2000:],
@@ -504,8 +638,9 @@ def field_rep_landing_page(request: HttpRequest) -> HttpResponse:
         return redirect(whatsapp_url)
 
     # Not found -> redirect to portal registration with params
+    # IMPORTANT: pass normalized campaign-id and stable field_rep_id downstream
     register_url = f"{base_url}/accounts/register/"
-    query = _urlencode({"campaign-id": campaign_id, "field_rep_id": field_rep_id})
+    query = _urlencode({"campaign-id": campaign_id_db, "field_rep_id": downstream_field_rep_id})
     dest = f"{register_url}?{query}"
 
     _plog(
@@ -515,6 +650,7 @@ def field_rep_landing_page(request: HttpRequest) -> HttpResponse:
         elapsed_ms=int((time.time() - start_ts) * 1000),
     )
     return redirect(dest)
+
 
 
     

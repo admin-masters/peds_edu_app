@@ -98,57 +98,6 @@ class MasterFieldRep:
     is_active: bool
 
 
-def get_field_rep(field_rep_id: str) -> Optional[MasterFieldRep]:
-    """
-    Looks up FieldRep by:
-      - brand_supplied_field_rep_id == field_rep_id
-      - OR primary key == field_rep_id (if numeric)
-    """
-    fid = (field_rep_id or "").strip()
-    if not fid:
-        return None
-
-    conn = get_master_connection()
-    table = getattr(settings, "MASTER_DB_FIELD_REP_TABLE", "publisher_fieldrep")
-    pk_col = getattr(settings, "MASTER_DB_FIELD_REP_PK_COLUMN", "id")
-    ext_col = getattr(settings, "MASTER_DB_FIELD_REP_EXTERNAL_ID_COLUMN", "brand_supplied_field_rep_id")
-    active_col = getattr(settings, "MASTER_DB_FIELD_REP_ACTIVE_COLUMN", "is_active")
-    name_col = getattr(settings, "MASTER_DB_FIELD_REP_FULL_NAME_COLUMN", "full_name")
-    phone_col = getattr(settings, "MASTER_DB_FIELD_REP_PHONE_COLUMN", "phone_number")
-
-    where = f"{qn(ext_col)} = %s"
-    params = [fid]
-
-    # If it is numeric, also try PK match (common if PK is integer)
-    if fid.isdigit():
-        where = f"({qn(ext_col)} = %s OR {qn(pk_col)} = %s)"
-        params = [fid, int(fid)]
-
-    sql = (
-        f"SELECT {qn(pk_col)}, {qn(name_col)}, {qn(phone_col)}, {qn(ext_col)}, {qn(active_col)} "
-        f"FROM {qn(table)} WHERE {where} LIMIT 1"
-    )
-    with conn.cursor() as cur:
-        cur.execute(sql, params)
-        row = cur.fetchone()
-
-    if not row:
-        return None
-
-    return MasterFieldRep(
-        id=str(row[0]),
-        full_name=str(row[1] or "").strip(),
-        phone_number=str(row[2] or "").strip(),
-        brand_supplied_field_rep_id=str(row[3] or "").strip(),
-        is_active=bool(row[4]),
-    )
-
-
-def field_rep_is_active(field_rep_id: str) -> bool:
-    fr = get_field_rep(field_rep_id)
-    return bool(fr and fr.is_active)
-
-
 # -------------------------------
 # MASTER: Campaign
 # -------------------------------
@@ -374,3 +323,205 @@ def ensure_enrollment(*, doctor_id: str, campaign_id: str, registered_by: str) -
             cur.execute(sql, [doctor_id, campaign_id, registered_by or ""])
     except IntegrityError:
         return
+
+
+def normalize_campaign_id(campaign_id: str) -> str:
+    """
+    Your join table stores campaign_id WITHOUT hyphens:
+      7ea0883d97914703b569c1f9f8d25705
+    but URLs pass UUID with hyphens:
+      7ea0883d-9791-4703-b569-c1f9f8d25705
+
+    Normalize by removing hyphens and trimming.
+    """
+    return (campaign_id or "").strip().replace("-", "")
+
+
+def get_campaign_fieldrep_link_fieldrep_id(*, campaign_id: str, link_pk: int) -> Optional[int]:
+    """
+    Treat `field_rep_id` URL as join-table primary key and resolve to actual field_rep_id.
+    """
+    conn = get_master_connection()
+
+    table = getattr(settings, "MASTER_DB_CAMPAIGN_FIELD_REP_TABLE", "campaign_campaignfieldrep")
+    pk_col = getattr(settings, "MASTER_DB_CAMPAIGN_FIELD_REP_PK_COLUMN", "id")
+    campaign_col = getattr(settings, "MASTER_DB_CAMPAIGN_FIELD_REP_CAMPAIGN_COLUMN", "campaign_id")
+    fr_col = getattr(settings, "MASTER_DB_CAMPAIGN_FIELD_REP_FIELD_REP_COLUMN", "field_rep_id")
+
+    cid = normalize_campaign_id(campaign_id)
+    sql = (
+        f"SELECT {qn(fr_col)} "
+        f"FROM {qn(table)} "
+        f"WHERE {qn(pk_col)} = %s AND {qn(campaign_col)} = %s "
+        f"LIMIT 1"
+    )
+
+    with conn.cursor() as cur:
+        cur.execute(sql, [int(link_pk), cid])
+        row = cur.fetchone()
+
+    if not row:
+        return None
+
+    try:
+        return int(row[0])
+    except Exception:
+        return None
+
+
+def is_fieldrep_linked_to_campaign(*, campaign_id: str, field_rep_id: int) -> bool:
+    """
+    Enforce that the field rep is allowed for this campaign (join table must contain row).
+    """
+    conn = get_master_connection()
+
+    table = getattr(settings, "MASTER_DB_CAMPAIGN_FIELD_REP_TABLE", "campaign_campaignfieldrep")
+    campaign_col = getattr(settings, "MASTER_DB_CAMPAIGN_FIELD_REP_CAMPAIGN_COLUMN", "campaign_id")
+    fr_col = getattr(settings, "MASTER_DB_CAMPAIGN_FIELD_REP_FIELD_REP_COLUMN", "field_rep_id")
+
+    cid = normalize_campaign_id(campaign_id)
+    sql = (
+        f"SELECT 1 FROM {qn(table)} "
+        f"WHERE {qn(campaign_col)} = %s AND {qn(fr_col)} = %s "
+        f"LIMIT 1"
+    )
+
+    with conn.cursor() as cur:
+        cur.execute(sql, [cid, int(field_rep_id)])
+        return cur.fetchone() is not None
+
+
+def get_field_rep(field_rep_id: str) -> Optional[MasterFieldRep]:
+    """
+    Correct FieldRep lookup against campaign_fieldrep (NOT campaign_campaignfieldrep).
+    Supports:
+      - id
+      - user_id
+      - brand_supplied_field_rep_id
+      - trailing digits from strings like "fieldrep_15"
+    """
+    fid_raw = (field_rep_id or "").strip()
+    if not fid_raw:
+        return None
+
+    # candidates: raw and trailing digits
+    candidates = [fid_raw]
+    m = re.search(r"(\d+)$", fid_raw)
+    if m and m.group(1) not in candidates:
+        candidates.append(m.group(1))
+
+    table = getattr(settings, "MASTER_DB_FIELD_REP_TABLE", "campaign_fieldrep")
+    pk_col = getattr(settings, "MASTER_DB_FIELD_REP_PK_COLUMN", "id")
+    user_id_col = getattr(settings, "MASTER_DB_FIELD_REP_USER_ID_COLUMN", "user_id")
+    ext_col = getattr(settings, "MASTER_DB_FIELD_REP_EXTERNAL_ID_COLUMN", "brand_supplied_field_rep_id")
+    active_col = getattr(settings, "MASTER_DB_FIELD_REP_ACTIVE_COLUMN", "is_active")
+    name_col = getattr(settings, "MASTER_DB_FIELD_REP_FULL_NAME_COLUMN", "full_name")
+    phone_col = getattr(settings, "MASTER_DB_FIELD_REP_PHONE_COLUMN", "phone_number")
+
+    str_candidates = []
+    int_candidates = []
+    for c in candidates:
+        c = (c or "").strip()
+        if not c:
+            continue
+        str_candidates.append(c)
+        if c.isdigit():
+            try:
+                int_candidates.append(int(c))
+            except Exception:
+                pass
+
+    if not str_candidates and not int_candidates:
+        return None
+
+    where_parts = []
+    params = []
+
+    # external id (string)
+    if str_candidates:
+        where_parts.append("(" + " OR ".join([f"{qn(ext_col)} = %s"] * len(str_candidates)) + ")")
+        params.extend(str_candidates)
+
+    # pk and user_id (numeric)
+    if int_candidates:
+        where_parts.append("(" + " OR ".join([f"{qn(pk_col)} = %s"] * len(int_candidates)) + ")")
+        params.extend(int_candidates)
+
+        where_parts.append("(" + " OR ".join([f"{qn(user_id_col)} = %s"] * len(int_candidates)) + ")")
+        params.extend(int_candidates)
+
+    where_sql = " OR ".join(where_parts)
+
+    conn = get_master_connection()
+    sql = (
+        f"SELECT {qn(pk_col)}, {qn(name_col)}, {qn(phone_col)}, {qn(ext_col)}, {qn(active_col)} "
+        f"FROM {qn(table)} "
+        f"WHERE {where_sql} "
+        f"LIMIT 1"
+    )
+
+    with conn.cursor() as cur:
+        cur.execute(sql, params)
+        row = cur.fetchone()
+
+    if not row:
+        return None
+
+    return MasterFieldRep(
+        id=str(row[0]),
+        full_name=str(row[1] or "").strip(),
+        phone_number=str(row[2] or "").strip(),
+        brand_supplied_field_rep_id=str(row[3] or "").strip(),
+        is_active=bool(row[4]),
+    )
+
+
+def resolve_field_rep_for_campaign(*, campaign_id: str, field_rep_identifier: str, token_sub: str = "") -> Optional[MasterFieldRep]:
+    """
+    The one function you should call from field_rep_landing_page.
+
+    It supports the real-world situation you have:
+      - URL field_rep_id may actually be the join-table id (e.g. 56)
+      - token_sub may be "fieldrep_15"
+
+    Resolution order:
+      1) Try identifier directly in FieldRep table (id/user_id/external id)
+         and enforce join exists for campaign.
+      2) If not found, treat identifier as join-table PK:
+         resolve to actual field_rep_id, fetch FieldRep, enforce join exists.
+      3) Try token_sub (and token_sub tail digits) as fallback (same enforcement).
+    """
+    cid = normalize_campaign_id(campaign_id)
+
+    # 1) direct candidates first
+    direct_candidates = [field_rep_identifier]
+    if token_sub:
+        direct_candidates.append(token_sub)
+        m = re.search(r"(\d+)$", token_sub)
+        if m:
+            direct_candidates.append(m.group(1))
+
+    # Try direct fieldrep matches + campaign link enforcement
+    for cand in direct_candidates:
+        if not cand:
+            continue
+        fr = get_field_rep(cand)
+        if fr and fr.is_active:
+            try:
+                if is_fieldrep_linked_to_campaign(campaign_id=cid, field_rep_id=int(fr.id)):
+                    return fr
+            except Exception:
+                # if id is non-numeric, skip link check (should not happen with your schema)
+                pass
+
+    # 2) treat URL identifier as join-table pk
+    if (field_rep_identifier or "").strip().isdigit():
+        link_pk = int(field_rep_identifier.strip())
+        fr_id = get_campaign_fieldrep_link_fieldrep_id(campaign_id=cid, link_pk=link_pk)
+        if fr_id:
+            fr = get_field_rep(str(fr_id))
+            if fr and fr.is_active:
+                if is_fieldrep_linked_to_campaign(campaign_id=cid, field_rep_id=fr_id):
+                    return fr
+
+    return None
