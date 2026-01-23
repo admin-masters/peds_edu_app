@@ -130,6 +130,10 @@ from django.http import HttpResponseServerError
 from django.shortcuts import render
 from django.urls import reverse
 
+from django.http import HttpResponseServerError
+from django.shortcuts import render
+from django.urls import reverse
+
 def register_doctor(request):
     # -----------------------------
     # GET
@@ -160,31 +164,34 @@ def register_doctor(request):
 
     campaign_id = (cd.get("campaign_id") or "").strip()
     field_rep_id = (cd.get("field_rep_id") or "").strip()
-
     recruited_via = "FIELD_REP" if field_rep_id else "SELF"
 
     # --------------------------------------------------
     # 1️⃣ CHECK EXISTING DOCTOR — MASTER DB
     # --------------------------------------------------
-    existing_doctor = master_db.find_doctor_by_email_or_whatsapp(
+    existing_doctor_row = master_db.find_doctor_by_email_or_whatsapp(
         email=email,
         whatsapp=whatsapp,
     )
 
-    if existing_doctor:
-        if campaign_id:
-            master_db.ensure_enrollment(
-                doctor_id=existing_doctor["doctor_id"],
-                campaign_id=campaign_id,
-                registered_by=field_rep_id or None,
-            )
+    if existing_doctor_row:
+        doctor = DoctorProfile.objects.filter(
+            doctor_id=existing_doctor_row["doctor_id"]
+        ).select_related("user").first()
 
-        _send_doctor_links_email(
-            doctor_id=existing_doctor["doctor_id"],
-            email=email,
-            campaign_id=campaign_id or None,
-            password_setup=True,
-        )
+        if doctor:
+            if campaign_id:
+                master_db.ensure_enrollment(
+                    doctor_id=doctor.doctor_id,
+                    campaign_id=campaign_id,
+                    registered_by=field_rep_id or None,
+                )
+
+            _send_doctor_links_email(
+                doctor,
+                campaign_id=campaign_id or None,
+                password_setup=True,
+            )
 
         return render(
             request,
@@ -207,7 +214,6 @@ def register_doctor(request):
     if cd.get("photo"):
         photo_path = cd["photo"].name
 
-    # ✅ SAFE extraction (NO KeyError)
     state = (cd.get("state") or "").strip()
     district = (cd.get("district") or "").strip()
 
@@ -223,14 +229,13 @@ def register_doctor(request):
             clinic_address=cd["clinic_address"].strip(),
             imc_number=cd["imc_registration_number"].strip(),
             postal_code=cd["postal_code"].strip(),
-            state=state or None,       # ✅ DB-safe
-            district=district or None, # ✅ DB-safe
+            state=state or None,
+            district=district or None,
             photo_path=photo_path,
             campaign_id=campaign_id or None,
             recruited_via=recruited_via,
             registered_by=field_rep_id or None,
         )
-
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -240,14 +245,18 @@ def register_doctor(request):
         )
 
     # --------------------------------------------------
-    # 3️⃣ SEND ACCESS LINKS
+    # 3️⃣ FETCH DOCTOR PROFILE & SEND LINKS
     # --------------------------------------------------
-    _send_doctor_links_email(
-        doctor_id=doctor_id,
-        email=email,
-        campaign_id=campaign_id or None,
-        password_setup=True,
-    )
+    doctor = DoctorProfile.objects.filter(
+        doctor_id=doctor_id
+    ).select_related("user").first()
+
+    if doctor:
+        _send_doctor_links_email(
+            doctor,
+            campaign_id=campaign_id or None,
+            password_setup=True,
+        )
 
     return render(
         request,
@@ -259,6 +268,7 @@ def register_doctor(request):
             ),
         },
     )
+
 
 
 
