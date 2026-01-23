@@ -119,211 +119,124 @@ def _pop_registration_draft(request, session_key: str) -> dict | None:
 # Registration (new doctor)
 # ---------------------------------------------------------------------
 
+from django.shortcuts import render
+from django.urls import reverse
+from django.http import HttpResponseServerError
+
+from accounts import master_db
+
+
 def register_doctor(request):
     if request.method == "GET":
-        initial = {}
-
-        campaign_id = (request.GET.get("campaign-id") or request.GET.get("campaign_id") or "").strip()
-        field_rep_id = (request.GET.get("field_rep_id") or request.GET.get("field-rep-id") or "").strip()
-
-        if campaign_id:
-            initial["campaign_id"] = campaign_id
-        if field_rep_id:
-            initial["field_rep_id"] = field_rep_id
-
-        draft = _pop_registration_draft(request, session_key="doctor_registration_draft")
-        if isinstance(draft, dict):
-            initial.update(draft)
-
-        form = DoctorRegistrationForm(initial=initial)
+        form = DoctorRegistrationForm(initial=request.GET)
         return render(request, "accounts/register.html", {"form": form, "mode": "register"})
 
+    # -----------------------------
     # POST
+    # -----------------------------
     form = DoctorRegistrationForm(request.POST, request.FILES)
     if not form.is_valid():
         return render(request, "accounts/register.html", {"form": form, "mode": "register"})
 
     cd = form.cleaned_data
 
+    email = cd["email"].strip().lower()
+    whatsapp = cd["clinic_whatsapp_number"].strip()
     campaign_id = (cd.get("campaign_id") or "").strip()
     field_rep_id = (cd.get("field_rep_id") or "").strip()
 
-    first_name = cd["first_name"].strip()
-    last_name = cd["last_name"].strip()
-    full_name = f"{first_name} {last_name}".strip()
-
-    email = cd["email"].strip().lower()
-    clinic_name = cd["clinic_name"].strip()
-    imc_registration_number = cd["imc_registration_number"].strip()
-    clinic_appointment_number = cd["clinic_appointment_number"].strip()
-    clinic_address = cd["clinic_address"].strip()
-    postal_code = cd["postal_code"].strip()
-    clinic_whatsapp_number = cd["clinic_whatsapp_number"].strip()
-    photo = cd["photo"]
-
-    # Compute State + District from PIN code directory
-    try:
-        state, district = get_state_and_district_for_pincode(postal_code)
-    except IndiaPincodeDirectoryNotReady as e:
-        return HttpResponseServerError(str(e))
-
-    if not state:
-        _store_registration_draft(
-            request,
-            session_key="doctor_registration_draft",
-            draft={
-                "campaign_id": campaign_id,
-                "field_rep_id": field_rep_id,
-                "first_name": first_name,
-                "last_name": last_name,
-                "email": email,
-                "clinic_name": clinic_name,
-                "imc_registration_number": imc_registration_number,
-                "clinic_appointment_number": clinic_appointment_number,
-                "clinic_address": clinic_address,
-                "postal_code": postal_code,
-                "clinic_whatsapp_number": clinic_whatsapp_number,
-            },
-        )
-        return render(
-            request,
-            "accounts/pincode_invalid.html",
-            {"return_url": reverse("accounts:register") + (f"?campaign-id={campaign_id}&field_rep_id={field_rep_id}" if campaign_id and field_rep_id else "")},
-        )
-
-    # ------------------------------------------------------------------
-    # Duplicate handling (portal DB)
-    # ------------------------------------------------------------------
-    existing_user = User.objects.filter(email=email).first()
-    if existing_user:
-        existing_doctor = getattr(existing_user, "doctor_profile", None)
-        if existing_doctor:
-            # Best-effort: backfill enrollment in master DB for this campaign
-            try:
-                if campaign_id:
-                    master_db.ensure_enrollment(
-                        doctor_id=existing_doctor.doctor_id,
-                        campaign_id=campaign_id,
-                        registered_by=field_rep_id,
-                    )
-            except Exception:
-                pass
-
-            _send_doctor_links_email(existing_doctor, campaign_id=campaign_id or None, password_setup=True)
-
-        return render(
-            request,
-            "accounts/already_registered.html",
-            {
-                "message": (
-                    "This email address has already been registered for a doctor on this portal. "
-                    "The link to login and use the system has been sent to your email. "
-                    "Follow the instructions in the email to use your system."
-                ),
-                "login_url": reverse("accounts:login"),
-            },
-        )
-
-    existing_whatsapp = (
-        DoctorProfile.objects
-        .select_related("user")
-        .filter(whatsapp_number=clinic_whatsapp_number)
-        .first()
-    )
-    if existing_whatsapp:
-        try:
-            if campaign_id:
-                master_db.ensure_enrollment(
-                    doctor_id=existing_whatsapp.doctor_id,
-                    campaign_id=campaign_id,
-                    registered_by=field_rep_id,
-                )
-        except Exception:
-            pass
-
-        _send_doctor_links_email(existing_whatsapp, campaign_id=campaign_id or None, password_setup=True)
-
-        return render(
-            request,
-            "accounts/already_registered.html",
-            {
-                "message": (
-                    "This WhatsApp number has already been registered for a doctor on this portal. "
-                    "The link to login and use the system has been sent to your email. "
-                    "Follow the instructions in the email to use your system."
-                ),
-                "login_url": reverse("accounts:login"),
-            },
-        )
-
-    # ------------------------------------------------------------------
-    # Create NEW doctor (portal DB) + insert into master DB
-    # ------------------------------------------------------------------
-
-    # Generate a doctor_id that is unique in BOTH portal DB and master DB
-    doctor_id = DoctorProfile._meta.get_field("doctor_id").default()
-    while DoctorProfile.objects.filter(doctor_id=doctor_id).exists() or master_db.doctor_id_exists(doctor_id):
-        doctor_id = DoctorProfile._meta.get_field("doctor_id").default()
-
-    # For clinic display name, prefer clinic_name; fallback to "Dr. <full_name>"
-    clinic_display_name = clinic_name or (f"Dr. {full_name}" if full_name else "")
-
     recruited_via = "FIELD_REP" if field_rep_id else "SELF"
 
-    with transaction.atomic():
-        user = User.objects.create_user(
-            email=email,
-            full_name=full_name,
-            password=None,
-        )
+    # --------------------------------------------------
+    # 1️⃣ CHECK EXISTING DOCTOR — MASTER DB
+    # --------------------------------------------------
+    existing_doctor = master_db.find_doctor_by_email_or_whatsapp(
+        email=email,
+        whatsapp=whatsapp,
+    )
 
-        clinic = Clinic.objects.create(
-            display_name=clinic_display_name,
-            clinic_phone=clinic_appointment_number,
-            clinic_whatsapp_number=clinic_whatsapp_number,
-            address_text=clinic_address,
-            postal_code=postal_code,
-            state=state,
-        )
-
-        doctor = DoctorProfile.objects.create(
-            user=user,
-            doctor_id=doctor_id,
-            clinic=clinic,
-            whatsapp_number=clinic_whatsapp_number,
-            imc_number=imc_registration_number,
-            postal_code=postal_code,
-            photo=photo,
-        )
-
-        # Insert into master DB (Doctor + DoctorCampaignEnrollment)
-        # photo_path: store same relative path used by portal storage
-        photo_path = getattr(doctor.photo, "name", "") or ""
-        try:
-            form.save_to_master_db(
-                doctor_id=doctor_id,
-                state=state or "",
-                district=district or "",
-                photo_path=photo_path,
-                recruited_via=recruited_via,
+    if existing_doctor:
+        # Ensure campaign enrollment
+        if campaign_id:
+            master_db.ensure_enrollment(
+                doctor_id=existing_doctor["doctor_id"],
+                campaign_id=campaign_id,
+                registered_by=field_rep_id,
             )
-        except Exception as e:
-            # Abort portal creation if master insert fails (keeps systems consistent)
-            raise
 
-    _send_doctor_links_email(doctor, campaign_id=campaign_id or None, password_setup=True)
+        _send_doctor_links_email(
+            doctor_id=existing_doctor["doctor_id"],
+            email=email,
+            campaign_id=campaign_id or None,
+            password_setup=True,
+        )
 
-    clinic_link_path = reverse("sharing:doctor_share", args=[doctor.doctor_id])
-    clinic_link = _build_absolute_url(clinic_link_path)
+        return render(
+            request,
+            "accounts/already_registered.html",
+            {
+                "message": (
+                    "This doctor is already registered. "
+                    "Access details have been sent to the registered email."
+                ),
+                "login_url": reverse("accounts:login"),
+            },
+        )
+
+    # --------------------------------------------------
+    # 2️⃣ CREATE DOCTOR — MASTER DB (SOURCE OF TRUTH)
+    # --------------------------------------------------
+    doctor_id = master_db.generate_doctor_id()
+
+    photo_path = ""
+    if cd.get("photo"):
+        photo_path = cd["photo"].name
+
+    try:
+        master_db.create_doctor_with_enrollment(
+            doctor_id=doctor_id,
+            first_name=cd["first_name"].strip(),
+            last_name=cd["last_name"].strip(),
+            email=email,
+            whatsapp=whatsapp,
+            clinic_name=cd["clinic_name"].strip(),
+            clinic_phone=cd["clinic_appointment_number"].strip(),
+            clinic_address=cd["clinic_address"].strip(),
+            imc_number=cd["imc_registration_number"].strip(),
+            postal_code=cd["postal_code"].strip(),
+            state=cd["state"],
+            district=cd["district"],
+            photo_path=photo_path,
+            campaign_id=campaign_id or None,
+            recruited_via=recruited_via,
+            registered_by=field_rep_id or None,
+        )
+    except Exception as e:
+        return HttpResponseServerError(
+            "Doctor registration failed. Please try again later."
+        )
+
+    # --------------------------------------------------
+    # 3️⃣ SEND ACCESS LINKS (MASTER-BASED)
+    # --------------------------------------------------
+    _send_doctor_links_email(
+        doctor_id=doctor_id,
+        email=email,
+        campaign_id=campaign_id or None,
+        password_setup=True,
+    )
 
     return render(
         request,
         "accounts/register_success.html",
         {
-            "doctor": doctor,
-            "clinic_link": clinic_link,
+            "doctor_id": doctor_id,
+            "clinic_link": _build_absolute_url(
+                reverse("sharing:doctor_share", args=[doctor_id])
+            ),
         },
     )
+
 
 
 
@@ -380,7 +293,7 @@ def modify_clinic_details(request, doctor_id: str):
     new_photo = form.cleaned_data.get("photo")
 
     try:
-        state = get_state_for_pincode(postal_code)
+        state, district = get_state_and_district_for_pincode(postal_code)
     except IndiaPincodeDirectoryNotReady as e:
         return HttpResponseServerError(str(e))
 
@@ -433,6 +346,7 @@ def modify_clinic_details(request, doctor_id: str):
             doctor.clinic.address_text = address_text
             doctor.clinic.postal_code = postal_code
             doctor.clinic.state = state
+            doctor.clinic.district = district
             doctor.clinic.save(
                 update_fields=[
                     "display_name",
@@ -441,6 +355,7 @@ def modify_clinic_details(request, doctor_id: str):
                     "address_text",
                     "postal_code",
                     "state",
+                    "district"
                 ]
             )
 
