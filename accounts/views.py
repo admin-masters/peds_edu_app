@@ -212,6 +212,7 @@ def register_doctor(request):
             registered_by=field_rep_id or None,
         )
     except Exception as e:
+        print("[Doctor registration failed] error -> ", e)
         return HttpResponseServerError(
             "Doctor registration failed. Please try again later."
         )
