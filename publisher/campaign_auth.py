@@ -45,20 +45,92 @@ def _extract_token(request: HttpRequest) -> Optional[str]:
     return None
 
 
+import time
+from accounts import master_db
+
+SESSION_PUBLISHER_MASTER_VALIDATION = "publisher_master_validation"
+PUBLISHER_MASTER_VALIDATION_TTL_SECONDS = getattr(settings, "PUBLISHER_MASTER_VALIDATION_TTL_SECONDS", 300)
+
+
+def _extract_email_from_claims(ident: Dict[str, Any]) -> str:
+    """
+    We must map JWT claims to the AuthorizedPublisher.email in master DB.
+    Prefer ident['email'] if present, else fallback to ident['username'] if it looks like an email.
+    """
+    email = (ident.get("email") or "").strip().lower()
+    if email and "@" in email:
+        return email
+
+    username = (ident.get("username") or "").strip().lower()
+    if username and "@" in username:
+        return username
+
+    # If your tokens carry publisher email in a different claim, add it here:
+    # e.g. ident.get("publisher_email")
+    other = (ident.get("publisher_email") or "").strip().lower()
+    if other and "@" in other:
+        return other
+
+    return ""
+
+
+def _is_publisher_authorized_in_master(request: HttpRequest, email: str) -> bool:
+    """
+    Cached check (session cache for 5 minutes default).
+    """
+    if not email:
+        return False
+
+    cache = request.session.get(SESSION_PUBLISHER_MASTER_VALIDATION) or {}
+    now = int(time.time())
+
+    if (
+        isinstance(cache, dict)
+        and cache.get("email") == email
+        and cache.get("ok") is True
+        and isinstance(cache.get("ts"), int)
+        and now - cache["ts"] <= int(PUBLISHER_MASTER_VALIDATION_TTL_SECONDS)
+    ):
+        return True
+
+    ok = master_db.authorized_publisher_exists(email)
+    request.session[SESSION_PUBLISHER_MASTER_VALIDATION] = {"email": email, "ok": bool(ok), "ts": now}
+    request.session.modified = True
+    return bool(ok)
+
+
 def get_publisher_claims(request: HttpRequest) -> Optional[Dict[str, Any]]:
     ident = request.session.get(SESSION_KEY)
     if isinstance(ident, dict):
         roles = _normalize_roles(ident.get("roles"))
         if "publisher" in [r.lower() for r in roles]:
-            return ident
+            email = _extract_email_from_claims(ident)
+            if _is_publisher_authorized_in_master(request, email):
+                return ident
+
+            # Not authorized anymore -> wipe session identity
+            request.session.pop(SESSION_KEY, None)
+            request.session.pop(SESSION_CAMPAIGN_KEY, None)
+            request.session.pop(SESSION_PUBLISHER_MASTER_VALIDATION, None)
+            request.session.modified = True
+            return None
 
     legacy = request.session.get(LEGACY_SESSION_KEY)
     if isinstance(legacy, dict):
         roles = _normalize_roles(legacy.get("roles"))
         if "publisher" in [r.lower() for r in roles]:
-            return legacy
+            email = _extract_email_from_claims(legacy)
+            if _is_publisher_authorized_in_master(request, email):
+                return legacy
+
+            request.session.pop(LEGACY_SESSION_KEY, None)
+            request.session.pop(LEGACY_CAMPAIGN_KEY, None)
+            request.session.pop(SESSION_PUBLISHER_MASTER_VALIDATION, None)
+            request.session.modified = True
+            return None
 
     return None
+
 
 
 def _redirect_to_sso_consume(request: HttpRequest, token: str) -> HttpResponse:
@@ -88,37 +160,63 @@ def _redirect_to_sso_consume(request: HttpRequest, token: str) -> HttpResponse:
     return redirect(consume_url)
 
 
-from functools import wraps
-from django.http import HttpResponseForbidden
-
 def publisher_required(view_func):
+    """
+    Part-C destination behavior:
+    - If valid SSO session exists -> allow
+    - Else if token present -> route via /sso/consume/
+    - Else -> 401 unauthorised access
+
+    Adds print logs (JSON lines) without leaking tokens.
+    """
+    import json
+    import time
+    import uuid
+
     @wraps(view_func)
-    def _wrapped_view(request, *args, **kwargs):
-        print("---- publisher_required START ----")
-        print("PATH:", request.path)
-        print("METHOD:", request.method)
-        print("HEADERS AUTH:", request.headers.get("Authorization"))
-        print("COOKIES:", request.COOKIES)
-        print("USER AUTHENTICATED:", getattr(request.user, "is_authenticated", None))
-        print("USER:", request.user)
+    def _wrapped(request: HttpRequest, *args, **kwargs):
+        req_id = request.META.get("HTTP_X_REQUEST_ID") or uuid.uuid4().hex[:12]
 
-        # If you are using JWT
-        token = request.headers.get("Authorization")
-        print("JWT TOKEN:", token)
+        def _plog(event: str, **data) -> None:
+            payload = {
+                "ts": int(time.time()),
+                "req_id": req_id,
+                "event": event,
+                "path": request.path,
+                "method": request.method,
+                "view": getattr(view_func, "__name__", "unknown"),
+            }
+            payload.update(data)
+            try:
+                print(json.dumps(payload, default=str))
+            except Exception:
+                print(f"[req_id={req_id}] {event} {data}")
 
-        # If user is expected to be publisher
-        if not request.user.is_authenticated:
-            print("BLOCKED: User not authenticated")
-            return HttpResponseForbidden("Unauthorised access")
+        _plog("publisher_required.start")
 
-        if not getattr(request.user, "is_publisher", False):
-            print("BLOCKED: User is not publisher")
-            return HttpResponseForbidden("Unauthorised access")
+        try:
+            claims = get_publisher_claims(request)
+        except Exception as e:
+            _plog("publisher_required.claims_error", error=str(e))
+            return unauthorized_response()
 
-        print("publisher_required PASSED")
-        print("---- publisher_required END ----")
+        if claims:
+            roles = claims.get("roles")
+            # Do not print sensitive fields; best-effort identify
+            username = (claims.get("email") or claims.get("username") or claims.get("sub") or "")
+            if isinstance(username, str) and "@" in username:
+                u_masked = username.split("@", 1)[0][:2] + "***@" + username.split("@", 1)[1]
+            else:
+                u_masked = str(username)[:6] + "***" if username else ""
+            _plog("publisher_required.authorized", user=u_masked, roles=roles)
+            return view_func(request, *args, **kwargs)
 
-        return view_func(request, *args, **kwargs)
+        token = _extract_token(request)
+        if token:
+            _plog("publisher_required.token_present.redirect_to_consume", token_len=len(token))
+            return _redirect_to_sso_consume(request, token)
 
-    return _wrapped_view
+        _plog("publisher_required.unauthorized.no_claims_no_token")
+        return unauthorized_response()
 
+    return _wrapped

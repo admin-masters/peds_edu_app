@@ -17,6 +17,16 @@ from django.urls import reverse
 from django.utils.text import slugify
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
+from django import forms
+from django.conf import settings
+from django.http import HttpRequest, HttpResponse
+from django.shortcuts import redirect, render
+from django.urls import reverse
+from django.utils.http import urlencode
+from django.views.decorators.http import require_http_methods
+
+from accounts import master_db
+
 from catalog.models import (
     TherapyArea,
     TriggerCluster,
@@ -37,13 +47,6 @@ from .models import Campaign
 # Helpers
 # -----------------------------
 SESSION_CAMPAIGN_META_BY_CAMPAIGN_KEY = "publisher_campaign_meta_by_campaign"
-class FieldRepWhatsAppForm(forms.Form):
-    whatsapp_number = forms.CharField(
-        label="Enter doctor’s WhatsApp number",
-        max_length=20,
-        required=True,
-        widget=forms.TextInput(attrs={"placeholder": "e.g. 9876543210", "inputmode": "numeric"}),
-    )
 
 def _capture_campaign_meta(request: HttpRequest, campaign_id: str | None) -> dict[str, Any]:
     """
@@ -82,12 +85,17 @@ def _capture_campaign_meta(request: HttpRequest, campaign_id: str | None) -> dic
 
     return meta
 
-def _render_campaign_text_template(template: str, *, doctor_name: str, clinic_link: str, setup_link: str = "") -> str:
-    """
-    Supports placeholders used historically and those described in the spec.
-    """
-    text = template or ""
+class FieldRepWhatsAppForm(forms.Form):
+    whatsapp_number = forms.CharField(
+        label="Enter doctor’s WhatsApp number",
+        max_length=20,
+        required=True,
+        widget=forms.TextInput(attrs={"placeholder": "e.g. 9876543210", "inputmode": "numeric"}),
+    )
 
+
+def _render_campaign_text_template(template: str, *, doctor_name: str, clinic_link: str, setup_link: str = "") -> str:
+    text = template or ""
     replacements = {
         "<doctor.user.full_name>": doctor_name,
         "<doctor_name>": doctor_name,
@@ -95,190 +103,420 @@ def _render_campaign_text_template(template: str, *, doctor_name: str, clinic_li
 
         "<clinic_link>": clinic_link,
         "{{clinic_link}}": clinic_link,
-        "<LinkShare>": clinic_link,
 
         "<setup_link>": setup_link,
         "{{setup_link}}": setup_link,
-        "<LinkPW>": setup_link,
     }
-
     for k, v in replacements.items():
         if v:
             text = text.replace(k, v)
-
     return text
 
 
+@publisher_required
 @require_http_methods(["GET", "POST"])
 def field_rep_landing_page(request: HttpRequest) -> HttpResponse:
-        """
-        JWT-gated page (via publisher_required) for field reps to:
-        - enforce doctors_supported limit (from publisher_campaign)
-        - check DoctorCampaignEnrollment count (master DB)
-        - if doctor exists: enroll (if needed) and open WhatsApp prefilled message
-        - if not: redirect to /accounts/register/ with campaign-id and field_rep_id
-        """
-        from accounts import master_db  # local import avoids circulars
-    
-        campaign_id = (
-            request.GET.get("campaign-id")
-            or request.GET.get("campaign_id")
-            or request.session.get(SESSION_CAMPAIGN_KEY)
-            or ""
-        ).strip()
-    
-        field_rep_id = (request.GET.get("field_rep_id") or request.GET.get("field-rep-id") or "").strip()
-    
-        if not campaign_id or not field_rep_id:
-            return render(
-                request,
-                "publisher/field_rep_landing_page.html",
-                {
-                    "form": FieldRepWhatsAppForm(),
-                    "campaign_id": campaign_id,
-                    "field_rep_id": field_rep_id,
-                    "limit_reached": True,
-                    "limit_message": "Missing campaign-id or field_rep_id in URL.",
-                },
-                status=400,
-            )
-    
-        campaign = Campaign.objects.filter(campaign_id=campaign_id).first()
-        if not campaign:
-            return render(
-                request,
-                "publisher/field_rep_landing_page.html",
-                {
-                    "form": FieldRepWhatsAppForm(),
-                    "campaign_id": campaign_id,
-                    "field_rep_id": field_rep_id,
-                    "limit_reached": True,
-                    "limit_message": "Unknown campaign-id (campaign details not found in publisher_campaign).",
-                },
-                status=400,
-            )
-    
-        doctors_supported = int(campaign.doctors_supported or 0)
-    
+    """
+    Field rep landing page with verbose print logs.
+
+    Logs:
+      - request id, method, path
+      - parsed campaign_id / field_rep_id
+      - field rep validation result
+      - campaign fetch result
+      - enrollment counts and limit checks
+      - POST validation, doctor lookup result
+      - redirect decisions (WhatsApp vs register)
+    """
+    import json
+    import time
+    import uuid
+    import traceback
+    from urllib.parse import urlencode as _urlencode
+
+    # -------------------------
+    # lightweight JSON logger
+    # -------------------------
+    req_id = request.META.get("HTTP_X_REQUEST_ID") or uuid.uuid4().hex[:12]
+    start_ts = time.time()
+
+    def _mask_phone(value: str) -> str:
+        s = "".join(ch for ch in str(value or "") if ch.isdigit())
+        if not s:
+            return ""
+        if len(s) <= 4:
+            return "*" * len(s)
+        return ("*" * (len(s) - 4)) + s[-4:]
+
+    def _mask_email(value: str) -> str:
+        v = (value or "").strip()
+        if "@" not in v:
+            return v[:2] + "***" if v else ""
+        local, domain = v.split("@", 1)
+        if len(local) <= 2:
+            local_masked = local[0] + "*"
+        else:
+            local_masked = local[:2] + "***"
+        return f"{local_masked}@{domain}"
+
+    def _plog(event: str, **data) -> None:
+        payload = {
+            "ts": int(time.time()),
+            "req_id": req_id,
+            "event": event,
+            "path": request.path,
+            "method": request.method,
+        }
+        payload.update(data)
         try:
-            enrolled_count = master_db.count_campaign_enrollments(campaign_id)
-        except master_db.MasterDBNotConfigured as e:
-            return render(
-                request,
-                "publisher/field_rep_landing_page.html",
-                {
-                    "form": FieldRepWhatsAppForm(),
-                    "campaign_id": campaign_id,
-                    "field_rep_id": field_rep_id,
-                    "campaign": campaign,
-                    "enrolled_count": 0,
-                    "doctors_supported": doctors_supported,
-                    "limit_reached": True,
-                    "limit_message": str(e),
-                },
-                status=500,
-            )
-    
-        limit_reached = bool(doctors_supported and enrolled_count >= doctors_supported)
-    
-        if request.method == "GET":
-            return render(
-                request,
-                "publisher/field_rep_landing_page.html",
-                {
-                    "form": FieldRepWhatsAppForm(),
-                    "campaign_id": campaign_id,
-                    "field_rep_id": field_rep_id,
-                    "campaign": campaign,
-                    "enrolled_count": enrolled_count,
-                    "doctors_supported": doctors_supported,
-                    "limit_reached": limit_reached,
-                    "limit_message": (
-                        "This campaign already has the maximum allowed doctors registered. "
-                        "If you wish to register more doctors, please speak to your brand manager "
-                        "who can answer your queries and obtain more licenses."
-                    ),
-                },
-            )
-    
-        # POST
-        form = FieldRepWhatsAppForm(request.POST)
-        if not form.is_valid():
-            return render(
-                request,
-                "publisher/field_rep_landing_page.html",
-                {
-                    "form": form,
-                    "campaign_id": campaign_id,
-                    "field_rep_id": field_rep_id,
-                    "campaign": campaign,
-                    "enrolled_count": enrolled_count,
-                    "doctors_supported": doctors_supported,
-                    "limit_reached": limit_reached,
-                    "limit_message": (
-                        "This campaign already has the maximum allowed doctors registered. "
-                        "If you wish to register more doctors, please speak to your brand manager "
-                        "who can answer your queries and obtain more licenses."
-                    ),
-                },
-            )
-    
-        if limit_reached:
-            return render(
-                request,
-                "publisher/field_rep_landing_page.html",
-                {
-                    "form": form,
-                    "campaign_id": campaign_id,
-                    "field_rep_id": field_rep_id,
-                    "campaign": campaign,
-                    "enrolled_count": enrolled_count,
-                    "doctors_supported": doctors_supported,
-                    "limit_reached": True,
-                    "limit_message": (
-                        "This campaign already has the maximum allowed doctors registered. "
-                        "If you wish to register more doctors, please speak to your brand manager "
-                        "who can answer your queries and obtain more licenses."
-                    ),
-                },
-            )
-    
-        wa_number = form.cleaned_data["whatsapp_number"]
-    
+            print(json.dumps(payload, default=str))
+        except Exception:
+            # last-resort plain print
+            print(f"[req_id={req_id}] {event} {data}")
+
+    _plog("field_rep_landing.start")
+
+    # -------------------------
+    # Parse inputs
+    # -------------------------
+    campaign_id = (request.GET.get("campaign-id") or request.GET.get("campaign_id") or "").strip()
+    field_rep_id = (request.GET.get("field_rep_id") or request.GET.get("field-rep-id") or "").strip()
+
+    _plog(
+        "field_rep_landing.params",
+        campaign_id=campaign_id,
+        field_rep_id=field_rep_id,
+        query_keys=list(request.GET.keys()),
+    )
+
+    if not campaign_id or not field_rep_id:
+        _plog("field_rep_landing.bad_request.missing_params")
+        return render(
+            request,
+            "publisher/field_rep_landing_page.html",
+            {
+                "form": FieldRepWhatsAppForm(),
+                "campaign_id": campaign_id,
+                "field_rep_id": field_rep_id,
+                "limit_reached": True,
+                "limit_message": "Missing campaign-id or field_rep_id in URL.",
+            },
+            status=400,
+        )
+
+    # -------------------------
+    # Validate field rep (MASTER DB)
+    # -------------------------
+    try:
+        fr = master_db.get_field_rep(field_rep_id)
+        _plog(
+            "field_rep_landing.field_rep.lookup",
+            found=bool(fr),
+            is_active=(bool(fr.is_active) if fr else None),
+            master_field_rep_pk=(fr.id if fr else None),
+            master_brand_supplied_field_rep_id=(fr.brand_supplied_field_rep_id if fr else None),
+        )
+    except Exception as e:
+        _plog(
+            "field_rep_landing.field_rep.lookup_error",
+            error=str(e),
+            traceback=traceback.format_exc()[-2000:],  # cap length
+        )
+        return render(
+            request,
+            "publisher/field_rep_landing_page.html",
+            {
+                "form": FieldRepWhatsAppForm(),
+                "campaign_id": campaign_id,
+                "field_rep_id": field_rep_id,
+                "limit_reached": True,
+                "limit_message": "Master DB error while validating field rep id.",
+            },
+            status=500,
+        )
+
+    if not fr or not fr.is_active:
+        _plog("field_rep_landing.unauthorized.invalid_or_inactive_field_rep")
+        return render(
+            request,
+            "publisher/field_rep_landing_page.html",
+            {
+                "form": FieldRepWhatsAppForm(),
+                "campaign_id": campaign_id,
+                "field_rep_id": field_rep_id,
+                "limit_reached": True,
+                "limit_message": "Invalid or inactive field rep id.",
+            },
+            status=401,
+        )
+
+    # -------------------------
+    # Fetch campaign (MASTER DB)
+    # -------------------------
+    try:
+        campaign = master_db.get_campaign(campaign_id)
+        _plog(
+            "field_rep_landing.campaign.lookup",
+            found=bool(campaign),
+            doctors_supported=(campaign.doctors_supported if campaign else None),
+        )
+    except Exception as e:
+        _plog(
+            "field_rep_landing.campaign.lookup_error",
+            error=str(e),
+            traceback=traceback.format_exc()[-2000:],
+        )
+        return render(
+            request,
+            "publisher/field_rep_landing_page.html",
+            {
+                "form": FieldRepWhatsAppForm(),
+                "campaign_id": campaign_id,
+                "field_rep_id": field_rep_id,
+                "limit_reached": True,
+                "limit_message": "Master DB error while fetching campaign.",
+            },
+            status=500,
+        )
+
+    if not campaign:
+        _plog("field_rep_landing.bad_request.unknown_campaign")
+        return render(
+            request,
+            "publisher/field_rep_landing_page.html",
+            {
+                "form": FieldRepWhatsAppForm(),
+                "campaign_id": campaign_id,
+                "field_rep_id": field_rep_id,
+                "limit_reached": True,
+                "limit_message": "Unknown campaign-id (not found in master campaign table).",
+            },
+            status=400,
+        )
+
+    # -------------------------
+    # Enrollment count + license enforcement
+    # -------------------------
+    doctors_supported = int(campaign.doctors_supported or 0)
+
+    try:
+        enrolled_count = master_db.count_campaign_enrollments(campaign_id)
+    except Exception as e:
+        _plog(
+            "field_rep_landing.enrollment_count_error",
+            error=str(e),
+            traceback=traceback.format_exc()[-2000:],
+        )
+        return render(
+            request,
+            "publisher/field_rep_landing_page.html",
+            {
+                "form": FieldRepWhatsAppForm(),
+                "campaign_id": campaign_id,
+                "field_rep_id": field_rep_id,
+                "campaign": campaign,
+                "enrolled_count": 0,
+                "doctors_supported": doctors_supported,
+                "limit_reached": True,
+                "limit_message": "Master DB error while counting enrollments.",
+            },
+            status=500,
+        )
+
+    limit_reached = bool(doctors_supported and enrolled_count >= doctors_supported)
+    limit_message = (
+        "This campaign already has the maximum allowed doctors registered. "
+        "If you wish to register more doctors, please speak to your brand manager who can answer your queries "
+        "and obtain more licenses."
+    )
+
+    _plog(
+        "field_rep_landing.limit_check",
+        doctors_supported=doctors_supported,
+        enrolled_count=enrolled_count,
+        limit_reached=limit_reached,
+    )
+
+    if request.method == "GET":
+        _plog("field_rep_landing.render_get", elapsed_ms=int((time.time() - start_ts) * 1000))
+        return render(
+            request,
+            "publisher/field_rep_landing_page.html",
+            {
+                "form": FieldRepWhatsAppForm(),
+                "campaign_id": campaign_id,
+                "field_rep_id": field_rep_id,
+                "campaign": campaign,
+                "enrolled_count": enrolled_count,
+                "doctors_supported": doctors_supported,
+                "limit_reached": limit_reached,
+                "limit_message": limit_message,
+            },
+        )
+
+    # -------------------------
+    # POST: validate WhatsApp input
+    # -------------------------
+    form = FieldRepWhatsAppForm(request.POST)
+    if not form.is_valid():
+        _plog(
+            "field_rep_landing.post.invalid_form",
+            errors=form.errors.get_json_data(),
+            elapsed_ms=int((time.time() - start_ts) * 1000),
+        )
+        return render(
+            request,
+            "publisher/field_rep_landing_page.html",
+            {
+                "form": form,
+                "campaign_id": campaign_id,
+                "field_rep_id": field_rep_id,
+                "campaign": campaign,
+                "enrolled_count": enrolled_count,
+                "doctors_supported": doctors_supported,
+                "limit_reached": limit_reached,
+                "limit_message": limit_message,
+            },
+        )
+
+    if limit_reached:
+        _plog("field_rep_landing.post.limit_reached_block", elapsed_ms=int((time.time() - start_ts) * 1000))
+        return render(
+            request,
+            "publisher/field_rep_landing_page.html",
+            {
+                "form": form,
+                "campaign_id": campaign_id,
+                "field_rep_id": field_rep_id,
+                "campaign": campaign,
+                "enrolled_count": enrolled_count,
+                "doctors_supported": doctors_supported,
+                "limit_reached": True,
+                "limit_message": limit_message,
+            },
+        )
+
+    wa_number = form.cleaned_data["whatsapp_number"]
+    _plog("field_rep_landing.post.whatsapp_received", whatsapp_masked=_mask_phone(wa_number))
+
+    # -------------------------
+    # Check doctor exists in MASTER DB by WhatsApp
+    # -------------------------
+    try:
         doctor = master_db.get_doctor_by_whatsapp(wa_number)
-        if doctor:
-            # Ensure enrollment exists (so the count reflects the registration)
+        _plog(
+            "field_rep_landing.doctor.lookup",
+            found=bool(doctor),
+            doctor_id=(doctor.doctor_id if doctor else None),
+            doctor_email_masked=(_mask_email(doctor.email) if doctor and doctor.email else None),
+        )
+    except Exception as e:
+        _plog(
+            "field_rep_landing.doctor.lookup_error",
+            error=str(e),
+            traceback=traceback.format_exc()[-2000:],
+        )
+        return render(
+            request,
+            "publisher/field_rep_landing_page.html",
+            {
+                "form": form,
+                "campaign_id": campaign_id,
+                "field_rep_id": field_rep_id,
+                "campaign": campaign,
+                "enrolled_count": enrolled_count,
+                "doctors_supported": doctors_supported,
+                "limit_reached": True,
+                "limit_message": "Master DB error while searching doctor.",
+            },
+            status=500,
+        )
+
+    base_url = getattr(settings, "PUBLIC_BASE_URL", "https://portal.cpdinclinic.co.in").rstrip("/")
+
+    if doctor:
+        # Ensure enrollment exists in master DB
+        registered_by = fr.brand_supplied_field_rep_id or field_rep_id
+        try:
             master_db.ensure_enrollment(
                 doctor_id=doctor.doctor_id,
                 campaign_id=campaign_id,
-                registered_by=field_rep_id,
+                registered_by=registered_by,
             )
-    
-            clinic_link = f"https://portal.cpdinclinic.co.in/clinic/{doctor.doctor_id}/share/"
-    
-            wa_addition_text = _render_campaign_text_template(
-                campaign.wa_addition or "",
-                doctor_name=(doctor.full_name or "Doctor").strip(),
-                clinic_link=clinic_link,
-                setup_link="",
-            ).strip()
-    
-            message_lines = []
-            if wa_addition_text:
-                message_lines.append(wa_addition_text)
-            if campaign.new_video_cluster_name:
-                message_lines.append(str(campaign.new_video_cluster_name).strip())
-            message_lines.append("Link to your clinic’s patient education system:")
-            message_lines.append(clinic_link)
-    
-            whatsapp_url = master_db.build_whatsapp_deeplink(wa_number, "\n".join(message_lines))
-    
-            return redirect(whatsapp_url)
-    
-        # Doctor not present: redirect to registration with campaign-id and field_rep_id
-        register_url = reverse("accounts:register")
-        query = urlencode({"campaign-id": campaign_id, "field_rep_id": field_rep_id})
-        return redirect(f"{register_url}?{query}")
+            _plog(
+                "field_rep_landing.enrollment.ensure",
+                doctor_id=doctor.doctor_id,
+                campaign_id=campaign_id,
+                registered_by=registered_by,
+                status="ok",
+            )
+        except Exception as e:
+            _plog(
+                "field_rep_landing.enrollment.ensure_error",
+                doctor_id=doctor.doctor_id,
+                campaign_id=campaign_id,
+                registered_by=registered_by,
+                error=str(e),
+                traceback=traceback.format_exc()[-2000:],
+            )
+            return render(
+                request,
+                "publisher/field_rep_landing_page.html",
+                {
+                    "form": form,
+                    "campaign_id": campaign_id,
+                    "field_rep_id": field_rep_id,
+                    "campaign": campaign,
+                    "enrolled_count": enrolled_count,
+                    "doctors_supported": doctors_supported,
+                    "limit_reached": True,
+                    "limit_message": "Master DB error while enrolling doctor into campaign.",
+                },
+                status=500,
+            )
+
+        clinic_link = f"{base_url}/clinic/{doctor.doctor_id}/share/"
+
+        wa_addition_text = _render_campaign_text_template(
+            campaign.wa_addition or "",
+            doctor_name=(doctor.full_name or "Doctor").strip(),
+            clinic_link=clinic_link,
+            setup_link="",
+        ).strip()
+
+        lines = []
+        if wa_addition_text:
+            lines.append(wa_addition_text)
+        if campaign.new_video_cluster_name:
+            lines.append(str(campaign.new_video_cluster_name).strip())
+        lines.append("Link to your clinic’s patient education system")
+        lines.append(clinic_link)
+
+        whatsapp_url = master_db.build_whatsapp_deeplink(wa_number, "\n".join(lines))
+
+        _plog(
+            "field_rep_landing.redirect.whatsapp",
+            whatsapp_masked=_mask_phone(wa_number),
+            doctor_id=doctor.doctor_id,
+            clinic_link=clinic_link,
+            elapsed_ms=int((time.time() - start_ts) * 1000),
+        )
+        return redirect(whatsapp_url)
+
+    # Not found -> redirect to portal registration with params
+    register_url = f"{base_url}/accounts/register/"
+    query = _urlencode({"campaign-id": campaign_id, "field_rep_id": field_rep_id})
+    dest = f"{register_url}?{query}"
+
+    _plog(
+        "field_rep_landing.redirect.register",
+        whatsapp_masked=_mask_phone(wa_number),
+        destination=dest,
+        elapsed_ms=int((time.time() - start_ts) * 1000),
+    )
+    return redirect(dest)
+
+
     
 
 

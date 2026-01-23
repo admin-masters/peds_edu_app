@@ -279,3 +279,49 @@ SSO_SHARED_SECRET = _sso_setting(
 SSO_SESSION_AGE_SECONDS = int(_sso_setting("SSO_SESSION_AGE_SECONDS", "3600"))
 SSO_SESSION_KEY_IDENTITY = "sso_identity"
 SSO_SESSION_KEY_CAMPAIGN = "campaign_id"
+
+
+# Master DB alias name used throughout the code
+MASTER_DB_ALIAS = os.getenv("MASTER_DB_ALIAS", "master").strip()
+
+# ---------------------------------------------------------------------
+# MASTER DATA TABLE NAMES (configure to match the admin Django project DB)
+# ---------------------------------------------------------------------
+
+# AuthorizedPublisher table
+MASTER_DB_AUTH_PUBLISHER_TABLE = os.getenv(
+    "MASTER_DB_AUTH_PUBLISHER_TABLE",
+    "publisher_authorizedpublisher",   # <-- CHANGE to real table name
+).strip()
+MASTER_DB_AUTH_PUBLISHER_EMAIL_COLUMN = os.getenv(
+    "MASTER_DB_AUTH_PUBLISHER_EMAIL_COLUMN",
+    "email",
+).strip()
+
+# FieldRep table
+MASTER_DB_FIELD_REP_TABLE = os.getenv(
+    "MASTER_DB_FIELD_REP_TABLE",
+    "publisher_fieldrep",              # <-- CHANGE to real table name
+).strip()
+MASTER_DB_FIELD_REP_PK_COLUMN = os.getenv("MASTER_DB_FIELD_REP_PK_COLUMN", "id").strip()
+MASTER_DB_FIELD_REP_EXTERNAL_ID_COLUMN = os.getenv(
+    "MASTER_DB_FIELD_REP_EXTERNAL_ID_COLUMN",
+    "brand_supplied_field_rep_id",
+).strip()
+MASTER_DB_FIELD_REP_ACTIVE_COLUMN = os.getenv("MASTER_DB_FIELD_REP_ACTIVE_COLUMN", "is_active").strip()
+MASTER_DB_FIELD_REP_FULL_NAME_COLUMN = os.getenv("MASTER_DB_FIELD_REP_FULL_NAME_COLUMN", "full_name").strip()
+MASTER_DB_FIELD_REP_PHONE_COLUMN = os.getenv("MASTER_DB_FIELD_REP_PHONE_COLUMN", "phone_number").strip()
+
+# Campaign table (the admin project’s campaign master)
+MASTER_DB_CAMPAIGN_TABLE = os.getenv(
+    "MASTER_DB_CAMPAIGN_TABLE",
+    "publisher_campaign",              # <-- CHANGE to real table name (could be schema qualified)
+).strip()
+MASTER_DB_CAMPAIGN_ID_COLUMN = os.getenv("MASTER_DB_CAMPAIGN_ID_COLUMN", "campaign_id").strip()
+MASTER_DB_CAMPAIGN_DOCTORS_SUPPORTED_COLUMN = os.getenv("MASTER_DB_CAMPAIGN_DOCTORS_SUPPORTED_COLUMN", "doctors_supported").strip()
+MASTER_DB_CAMPAIGN_WA_ADDITION_COLUMN = os.getenv("MASTER_DB_CAMPAIGN_WA_ADDITION_COLUMN", "wa_addition").strip()
+MASTER_DB_CAMPAIGN_VIDEO_CLUSTER_COLUMN = os.getenv("MASTER_DB_CAMPAIGN_VIDEO_CLUSTER_COLUMN", "new_video_cluster_name").strip()
+MASTER_DB_CAMPAIGN_EMAIL_REGISTRATION_COLUMN = os.getenv("MASTER_DB_CAMPAIGN_EMAIL_REGISTRATION_COLUMN", "email_registration").strip()
+
+# Public base URL used for absolute links
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://portal.cpdinclinic.co.in").rstrip("/")
