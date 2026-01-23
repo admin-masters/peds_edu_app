@@ -212,6 +212,8 @@ def register_doctor(request):
             registered_by=field_rep_id or None,
         )
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         print("[Doctor registration failed] error -> ", e)
         return HttpResponseServerError(
             "Doctor registration failed. Please try again later."
