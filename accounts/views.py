@@ -126,22 +126,38 @@ from django.http import HttpResponseServerError
 from accounts import master_db
 
 
+from django.http import HttpResponseServerError
+from django.shortcuts import render
+from django.urls import reverse
+
 def register_doctor(request):
+    # -----------------------------
+    # GET
+    # -----------------------------
     if request.method == "GET":
         form = DoctorRegistrationForm(initial=request.GET)
-        return render(request, "accounts/register.html", {"form": form, "mode": "register"})
+        return render(
+            request,
+            "accounts/register.html",
+            {"form": form, "mode": "register"},
+        )
 
     # -----------------------------
     # POST
     # -----------------------------
     form = DoctorRegistrationForm(request.POST, request.FILES)
     if not form.is_valid():
-        return render(request, "accounts/register.html", {"form": form, "mode": "register"})
+        return render(
+            request,
+            "accounts/register.html",
+            {"form": form, "mode": "register"},
+        )
 
     cd = form.cleaned_data
 
     email = cd["email"].strip().lower()
     whatsapp = cd["clinic_whatsapp_number"].strip()
+
     campaign_id = (cd.get("campaign_id") or "").strip()
     field_rep_id = (cd.get("field_rep_id") or "").strip()
 
@@ -156,12 +172,11 @@ def register_doctor(request):
     )
 
     if existing_doctor:
-        # Ensure campaign enrollment
         if campaign_id:
             master_db.ensure_enrollment(
                 doctor_id=existing_doctor["doctor_id"],
                 campaign_id=campaign_id,
-                registered_by=field_rep_id,
+                registered_by=field_rep_id or None,
             )
 
         _send_doctor_links_email(
@@ -184,13 +199,17 @@ def register_doctor(request):
         )
 
     # --------------------------------------------------
-    # 2️⃣ CREATE DOCTOR — MASTER DB (SOURCE OF TRUTH)
+    # 2️⃣ CREATE DOCTOR — MASTER DB
     # --------------------------------------------------
     doctor_id = master_db.generate_doctor_id()
 
     photo_path = ""
     if cd.get("photo"):
         photo_path = cd["photo"].name
+
+    # ✅ SAFE extraction (NO KeyError)
+    state = (cd.get("state") or "").strip()
+    district = (cd.get("district") or "").strip()
 
     try:
         master_db.create_doctor_with_enrollment(
@@ -204,23 +223,24 @@ def register_doctor(request):
             clinic_address=cd["clinic_address"].strip(),
             imc_number=cd["imc_registration_number"].strip(),
             postal_code=cd["postal_code"].strip(),
-            state=cd["state"],
-            district=cd["district"],
+            state=state or None,       # ✅ DB-safe
+            district=district or None, # ✅ DB-safe
             photo_path=photo_path,
             campaign_id=campaign_id or None,
             recruited_via=recruited_via,
             registered_by=field_rep_id or None,
         )
+
     except Exception as e:
         import traceback
         traceback.print_exc()
-        print("[Doctor registration failed] error -> ", e)
+        print("[Doctor registration failed] error ->", e)
         return HttpResponseServerError(
             "Doctor registration failed. Please try again later."
         )
 
     # --------------------------------------------------
-    # 3️⃣ SEND ACCESS LINKS (MASTER-BASED)
+    # 3️⃣ SEND ACCESS LINKS
     # --------------------------------------------------
     _send_doctor_links_email(
         doctor_id=doctor_id,
@@ -239,6 +259,7 @@ def register_doctor(request):
             ),
         },
     )
+
 
 
 
