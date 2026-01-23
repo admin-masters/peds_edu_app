@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from typing import Optional
@@ -230,24 +231,194 @@ def get_doctor_by_whatsapp(whatsapp_no: str) -> Optional[MasterDoctor]:
     )
 
 
-def count_campaign_enrollments(campaign_id: str) -> int:
-    conn = get_master_connection()
-    table = getattr(settings, "MASTER_DB_ENROLLMENT_TABLE", "DoctorCampaignEnrollment")
-    campaign_col = getattr(settings, "MASTER_DB_ENROLLMENT_CAMPAIGN_COLUMN", "campaign_id")
+from typing import Dict, List, Optional, Tuple
 
-    cid = str(campaign_id or "").strip()
-    if not cid:
+_ENROLLMENT_META_CACHE: Optional[Dict[str, str]] = None
+
+
+def _db_schema_name(conn) -> str:
+    return (conn.settings_dict.get("NAME") or "").strip()
+
+
+def _table_exists(conn, table_name: str) -> bool:
+    schema = _db_schema_name(conn)
+    if not schema or not table_name:
+        return False
+    sql = """
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_schema = %s AND table_name = %s
+        LIMIT 1
+    """
+    with conn.cursor() as cur:
+        cur.execute(sql, [schema, table_name])
+        return cur.fetchone() is not None
+
+
+def _find_table_by_patterns(conn, patterns: List[str]) -> Optional[str]:
+    """
+    Find the first table whose name matches any of the LIKE patterns (case-insensitive).
+    """
+    schema = _db_schema_name(conn)
+    if not schema:
+        return None
+
+    sql = """
+        SELECT table_name
+        FROM information_schema.tables
+        WHERE table_schema = %s AND LOWER(table_name) LIKE %s
+        ORDER BY LENGTH(table_name) ASC, table_name ASC
+        LIMIT 1
+    """
+
+    for pat in patterns:
+        with conn.cursor() as cur:
+            cur.execute(sql, [schema, pat.lower()])
+            row = cur.fetchone()
+        if row and row[0]:
+            return str(row[0])
+    return None
+
+
+def _get_table_columns(conn, table_name: str) -> List[str]:
+    schema = _db_schema_name(conn)
+    sql = """
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = %s AND table_name = %s
+    """
+    with conn.cursor() as cur:
+        cur.execute(sql, [schema, table_name])
+        rows = cur.fetchall()
+    return [str(r[0]) for r in (rows or []) if r and r[0]]
+
+
+def _pick_first_column(cols: List[str], candidates: List[str]) -> Optional[str]:
+    cols_l = {c.lower(): c for c in cols}
+    for cand in candidates:
+        if cand.lower() in cols_l:
+            return cols_l[cand.lower()]
+    return None
+
+
+def _normalize_uuid_for_mysql(raw: str) -> str:
+    """
+    MySQL Django UUIDField commonly stored as CHAR(32) without hyphens.
+    """
+    return (raw or "").strip().replace("-", "")
+
+
+def _get_enrollment_meta() -> Dict[str, str]:
+    """
+    Discover enrollment table + columns once per process and cache.
+
+    Returns dict:
+      {
+        "table": <table_name>,
+        "campaign_col": <campaign_column_name>,
+        "doctor_col": <doctor_column_name>,
+        "registered_by_col": <optional column name or "">,
+      }
+    """
+    global _ENROLLMENT_META_CACHE
+    if _ENROLLMENT_META_CACHE is not None:
+        return _ENROLLMENT_META_CACHE
+
+    conn = get_master_connection()
+
+    # If you hardcoded an explicit table in settings, prefer it.
+    explicit_table = (getattr(settings, "MASTER_DB_ENROLLMENT_TABLE", "") or "").strip()
+    if explicit_table and _table_exists(conn, explicit_table):
+        table = explicit_table
+    else:
+        # Auto-discover by Django model naming patterns
+        patterns = [
+            "%doctorcampaignenrollment%",
+            "%doctor_campaign_enrollment%",
+            "%campaignenrollment%",
+            "%enrolment%",  # UK spelling fallback
+        ]
+        table = _find_table_by_patterns(conn, patterns)
+
+    if not table:
+        raise RuntimeError(
+            "Enrollment table not found in master DB. "
+            "Create/migrate the enrollment model or set settings.MASTER_DB_ENROLLMENT_TABLE explicitly."
+        )
+
+    cols = _get_table_columns(conn, table)
+    if not cols:
+        raise RuntimeError(f"Could not read columns for enrollment table '{table}' in master DB.")
+
+    # Common Django FK column naming: campaign_id, doctor_id, registered_by_id
+    campaign_col = _pick_first_column(cols, ["campaign_id", "campaign", "campaign_uuid"])
+    doctor_col = _pick_first_column(cols, ["doctor_id", "doctor", "doctor_uuid"])
+
+    # registered_by may be FK to FieldRep => registered_by_id
+    registered_by_col = _pick_first_column(
+        cols,
+        ["registered_by_id", "registered_by", "field_rep_id", "fieldrep_id"],
+    )
+
+    if not campaign_col or not doctor_col:
+        raise RuntimeError(
+            f"Enrollment table '{table}' does not have expected columns. "
+            f"Found columns: {cols}"
+        )
+
+    _ENROLLMENT_META_CACHE = {
+        "table": table,
+        "campaign_col": campaign_col,
+        "doctor_col": doctor_col,
+        "registered_by_col": registered_by_col or "",
+    }
+
+    print(json.dumps({
+        "ts": int(time.time()),
+        "event": "master_db.enrollment_meta.discovered",
+        "table": table,
+        "campaign_col": campaign_col,
+        "doctor_col": doctor_col,
+        "registered_by_col": registered_by_col or "",
+    }, default=str))
+
+    return _ENROLLMENT_META_CACHE
+
+
+def count_campaign_enrollments(campaign_id: str) -> int:
+    """
+    Count doctors enrolled for a campaign in MASTER DB.
+    Tries both hyphenated and non-hyphenated UUID formats.
+    """
+    meta = _get_enrollment_meta()
+    table = meta["table"]
+    campaign_col = meta["campaign_col"]
+
+    cid_raw = (campaign_id or "").strip()
+    if not cid_raw:
         return 0
+
+    cid_norm = _normalize_uuid_for_mysql(cid_raw)
+
+    conn = get_master_connection()
 
     sql = f"SELECT COUNT(*) FROM {qn(table)} WHERE {qn(campaign_col)} = %s"
-    with conn.cursor() as cur:
-        cur.execute(sql, [cid])
-        row = cur.fetchone()
 
-    try:
-        return int(row[0])
-    except Exception:
-        return 0
+    counts = []
+    with conn.cursor() as cur:
+        # normalized (CHAR32)
+        cur.execute(sql, [cid_norm])
+        row = cur.fetchone()
+        counts.append(int(row[0] or 0))
+
+        # raw (hyphenated) only if different
+        if cid_raw != cid_norm:
+            cur.execute(sql, [cid_raw])
+            row = cur.fetchone()
+            counts.append(int(row[0] or 0))
+
+    return max(counts) if counts else 0
+
 
 
 def insert_doctor_row(
@@ -320,25 +491,36 @@ def insert_doctor_row(
 
 
 def ensure_enrollment(*, doctor_id: str, campaign_id: str, registered_by: str) -> None:
+    """
+    Insert enrollment row in MASTER DB (MySQL) if not already present.
+    Uses INSERT IGNORE to avoid duplicate key failures (if unique constraint exists).
+    """
     if not (doctor_id and campaign_id):
         return
 
+    meta = _get_enrollment_meta()
+    table = meta["table"]
+    doctor_col = meta["doctor_col"]
+    campaign_col = meta["campaign_col"]
+    registered_by_col = meta.get("registered_by_col") or ""
+
+    cid_raw = (campaign_id or "").strip()
+    cid_norm = _normalize_uuid_for_mysql(cid_raw)
+
+    cols = [doctor_col, campaign_col]
+    vals = [doctor_id, cid_norm]
+
+    if registered_by_col:
+        cols.append(registered_by_col)
+        vals.append(registered_by or "")
+
+    placeholders = ", ".join(["%s"] * len(cols))
+    sql = f"INSERT IGNORE INTO {qn(table)} ({', '.join(qn(c) for c in cols)}) VALUES ({placeholders})"
+
     conn = get_master_connection()
-    table = getattr(settings, "MASTER_DB_ENROLLMENT_TABLE", "DoctorCampaignEnrollment")
+    with conn.cursor() as cur:
+        cur.execute(sql, vals)
 
-    doctor_col = getattr(settings, "MASTER_DB_ENROLLMENT_DOCTOR_COLUMN", "doctor_id")
-    campaign_col = getattr(settings, "MASTER_DB_ENROLLMENT_CAMPAIGN_COLUMN", "campaign_id")
-    registered_by_col = getattr(settings, "MASTER_DB_ENROLLMENT_REGISTERED_BY_COLUMN", "registered_by_id")
-
-    sql = (
-        f"INSERT INTO {qn(table)} ({qn(doctor_col)}, {qn(campaign_col)}, {qn(registered_by_col)}) "
-        f"VALUES (%s, %s, %s)"
-    )
-    try:
-        with conn.cursor() as cur:
-            cur.execute(sql, [doctor_id, campaign_id, registered_by or ""])
-    except IntegrityError:
-        return
 
 
 def normalize_campaign_id(campaign_id: str) -> str:
