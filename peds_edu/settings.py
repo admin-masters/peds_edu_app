@@ -17,6 +17,12 @@ from .aws_secrets import get_secret_string  # Optional fallback for secrets
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
+CSRF_TRUSTED_ORIGINS = [
+    "https://portal.cpdinclinic.co.in",
+    "https://www.portal.cpdinclinic.co.in",
+    "http://3.6.101.52",
+]
+
 
 def env(name: str, default: str | None = None) -> str:
     value = os.getenv(name, default)
