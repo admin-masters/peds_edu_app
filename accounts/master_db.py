@@ -943,6 +943,8 @@ def create_doctor_with_enrollment(
     campaign_id: Optional[str] = None,
     recruited_via: str = "SELF",
     registered_by: Optional[str] = None,
+    initial_password_raw: Optional[str] = None,
+
 ) -> None:
     """
     Atomically:
@@ -973,8 +975,6 @@ def create_doctor_with_enrollment(
 
     recruited_via = (recruited_via or "SELF").strip()
     field_rep_id = (registered_by or "").strip()
-
-    initial_password_raw: Optional[str] = None,
 
     pwd_hash = make_password(initial_password_raw) if initial_password_raw else ""
     pwd_set_at = timezone.now() if initial_password_raw else None
