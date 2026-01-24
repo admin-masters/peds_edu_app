@@ -11,6 +11,54 @@ from django.conf import settings
 from django.db import connections, IntegrityError
 
 
+import logging
+
+_master_logger = logging.getLogger("accounts.master_db")
+_MASTER_CONN_LOGGED = False
+
+
+def _mask_email_for_log(email: str) -> str:
+    e = (email or "").strip().lower()
+    if "@" not in e:
+        return (e[:2] + "***") if e else ""
+    u, d = e.split("@", 1)
+    return f"{(u[:2] + '***') if len(u) >= 2 else '***'}@{d}"
+
+
+def _mask_phone_for_log(phone: str) -> str:
+    digits = re.sub(r"\D", "", str(phone or ""))
+    return (f"***{digits[-4:]}") if len(digits) > 4 else ("***" if digits else "")
+
+
+def _conn_info(conn) -> dict:
+    d = getattr(conn, "settings_dict", {}) or {}
+    return {
+        "ENGINE": d.get("ENGINE"),
+        "NAME": d.get("NAME"),
+        "HOST": d.get("HOST"),
+        "PORT": d.get("PORT"),
+        "USER": d.get("USER"),
+    }
+
+
+def _log_db(event: str, level: str = "info", **fields) -> None:
+    msg = json.dumps({"ts": int(time.time()), "event": event, **fields}, default=str, ensure_ascii=False)
+    if level == "debug":
+        _master_logger.debug(msg)
+    elif level == "warning":
+        _master_logger.warning(msg)
+    elif level == "error":
+        _master_logger.error(msg)
+    else:
+        _master_logger.info(msg)
+
+
+def _log_db_exc(event: str, **fields) -> None:
+    _master_logger.exception(
+        json.dumps({"ts": int(time.time()), "event": event, **fields}, default=str, ensure_ascii=False)
+    )
+
+
 class MasterDBNotConfigured(RuntimeError):
     pass
 
@@ -495,6 +543,9 @@ def insert_doctor_row(
     conn = get_master_connection()
     table = getattr(settings, "MASTER_DB_DOCTOR_TABLE", "Doctor")
 
+    _log_db("master_db.doctor.insert.start", doctor_id=doctor_id, email=_mask_email_for_log(email),
+            whatsapp=_mask_phone_for_log(whatsapp_no), table=table)
+
     cols = (
         "doctor_id",
         "first_name",
@@ -539,6 +590,7 @@ def insert_doctor_row(
     sql = f"INSERT INTO {qn(table)} ({', '.join(qn(c) for c in cols)}) VALUES ({placeholders})"
     with conn.cursor() as cur:
         cur.execute(sql, vals)
+        _log_db("master_db.doctor.insert.ok", doctor_id=doctor_id, rowcount=getattr(cur, "rowcount", None))
 
 
 def ensure_enrollment(*, doctor_id: str, campaign_id: str, registered_by: str) -> None:
@@ -546,6 +598,10 @@ def ensure_enrollment(*, doctor_id: str, campaign_id: str, registered_by: str) -
     Insert enrollment row in MASTER DB (MySQL) if not already present.
     Uses INSERT IGNORE to avoid duplicate key failures (if unique constraint exists).
     """
+
+    _log_db("master_db.enrollment.ensure.start", doctor_id=doctor_id, campaign_id=campaign_id)
+
+
     if not (doctor_id and campaign_id):
         return
 
@@ -571,6 +627,8 @@ def ensure_enrollment(*, doctor_id: str, campaign_id: str, registered_by: str) -
     conn = get_master_connection()
     with conn.cursor() as cur:
         cur.execute(sql, vals)
+        _log_db("master_db.enrollment.ensure.done", doctor_id=doctor_id, campaign_id=cid_norm,
+                rowcount=getattr(cur, "rowcount", None))
 
 
 
@@ -780,53 +838,96 @@ def find_doctor_by_email_or_whatsapp(*, email: str, whatsapp: str) -> Optional[M
     """
     Find existing doctor in MASTER DB by email OR WhatsApp.
     """
+
     email_n = (email or "").strip().lower()
     wa_n = normalize_wa_for_lookup(whatsapp)
 
-    if not email_n and not wa_n:
-        return None
-
-    conn = get_master_connection()
-    table = getattr(settings, "MASTER_DB_DOCTOR_TABLE", "redflags_doctor")
-
-    id_col = getattr(settings, "MASTER_DB_DOCTOR_ID_COLUMN", "doctor_id")
-    fn_col = getattr(settings, "MASTER_DB_DOCTOR_FIRST_NAME_COLUMN", "first_name")
-    ln_col = getattr(settings, "MASTER_DB_DOCTOR_LAST_NAME_COLUMN", "last_name")
-    email_col = getattr(settings, "MASTER_DB_DOCTOR_EMAIL_COLUMN", "email")
-    wa_col = getattr(settings, "MASTER_DB_DOCTOR_WHATSAPP_COLUMN", "whatsapp_no")
-
-    where = []
-    vals = []
-
-    if email_n:
-        where.append(f"LOWER({qn(email_col)}) = LOWER(%s)")
-        vals.append(email_n)
-
-    if wa_n:
-        where.append(f"{qn(wa_col)} = %s")
-        vals.append(wa_n)
-
-    sql = (
-        f"SELECT {qn(id_col)}, {qn(fn_col)}, {qn(ln_col)}, {qn(email_col)}, {qn(wa_col)} "
-        f"FROM {qn(table)} "
-        f"WHERE {' OR '.join(where)} "
-        f"LIMIT 1"
+    _log_db(
+        "master_db.doctor.lookup.start",
+        email=_mask_email_for_log(email_n),
+        whatsapp=_mask_phone_for_log(wa_n),
     )
 
-    with conn.cursor() as cur:
-        cur.execute(sql, vals)
-        row = cur.fetchone()
-
-    if not row:
+    if not email_n and not wa_n:
+        _log_db(
+            "master_db.doctor.lookup.no_input",
+            level="warning",
+        )
         return None
 
-    return MasterDoctor(
+    conn = None
+    row = None
+
+    try:
+        conn = get_master_connection()
+        table = getattr(settings, "MASTER_DB_DOCTOR_TABLE", "redflags_doctor")
+
+        id_col = getattr(settings, "MASTER_DB_DOCTOR_ID_COLUMN", "doctor_id")
+        fn_col = getattr(settings, "MASTER_DB_DOCTOR_FIRST_NAME_COLUMN", "first_name")
+        ln_col = getattr(settings, "MASTER_DB_DOCTOR_LAST_NAME_COLUMN", "last_name")
+        email_col = getattr(settings, "MASTER_DB_DOCTOR_EMAIL_COLUMN", "email")
+        wa_col = getattr(settings, "MASTER_DB_DOCTOR_WHATSAPP_COLUMN", "whatsapp_no")
+
+        where = []
+        vals = []
+
+        if email_n:
+            where.append(f"LOWER({qn(email_col)}) = LOWER(%s)")
+            vals.append(email_n)
+
+        if wa_n:
+            where.append(f"{qn(wa_col)} = %s")
+            vals.append(wa_n)
+
+        sql = (
+            f"SELECT {qn(id_col)}, {qn(fn_col)}, {qn(ln_col)}, {qn(email_col)}, {qn(wa_col)} "
+            f"FROM {qn(table)} "
+            f"WHERE {' OR '.join(where)} "
+            f"LIMIT 1"
+        )
+
+        _log_db(
+            "master_db.doctor.lookup.query",
+            table=table,
+            where=" OR ".join(where),
+        )
+
+        with conn.cursor() as cur:
+            cur.execute(sql, vals)
+            row = cur.fetchone()
+
+    except Exception:
+        _log_db_exc(
+            "master_db.doctor.lookup.exception",
+            email=_mask_email_for_log(email_n),
+            whatsapp=_mask_phone_for_log(wa_n),
+        )
+        raise
+
+    if not row:
+        _log_db(
+            "master_db.doctor.lookup.none",
+            email=_mask_email_for_log(email_n),
+            whatsapp=_mask_phone_for_log(wa_n),
+        )
+        return None
+
+    doctor = MasterDoctor(
         doctor_id=str(row[0] or "").strip(),
         first_name=str(row[1] or "").strip(),
         last_name=str(row[2] or "").strip(),
         email=str(row[3] or "").strip(),
         whatsapp_no=str(row[4] or "").strip(),
     )
+
+    _log_db(
+        "master_db.doctor.lookup.found",
+        doctor_id=doctor.doctor_id,
+        email=_mask_email_for_log(doctor.email),
+        whatsapp=_mask_phone_for_log(doctor.whatsapp_no),
+    )
+
+    return doctor
 
 
 def generate_doctor_id(prefix: str = "DR", max_tries: int = 10) -> str:

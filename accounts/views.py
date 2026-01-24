@@ -128,79 +128,256 @@ def _pop_registration_draft(request, session_key: str) -> dict | None:
 # Registration (new doctor)
 # ---------------------------------------------------------------------
 
-from django.shortcuts import render
-from django.urls import reverse
-from django.http import HttpResponseServerError
+import json
+import logging
+import re
+import time
+import uuid
 
-from accounts import master_db
+_recruit_logger = logging.getLogger("accounts.recruitment")
 
 
-from django.http import HttpResponseServerError
-from django.shortcuts import render
-from django.urls import reverse
+def _mask_email(email: str) -> str:
+    e = (email or "").strip().lower()
+    if "@" not in e:
+        return (e[:2] + "***") if e else ""
+    user, domain = e.split("@", 1)
+    user_mask = (user[:2] + "***") if len(user) >= 2 else "***"
+    return f"{user_mask}@{domain}"
 
-from django.http import HttpResponseServerError
-from django.shortcuts import render
-from django.urls import reverse
+
+def _mask_phone(phone: str) -> str:
+    digits = re.sub(r"\D", "", str(phone or ""))
+    if not digits:
+        return ""
+    if len(digits) <= 4:
+        return "***"
+    return f"***{digits[-4:]}"
+
+
+def _get_request_id(request) -> str:
+    rid = (request.META.get("HTTP_X_REQUEST_ID") or "").strip()
+    return rid or uuid.uuid4().hex
+
+
+def _log(event: str, *, request_id: str, level: str = "info", **fields) -> None:
+    payload = {
+        "ts": int(time.time()),
+        "event": event,
+        "request_id": request_id,
+        **fields,
+    }
+    msg = json.dumps(payload, default=str, ensure_ascii=False)
+
+    if level == "debug":
+        _recruit_logger.debug(msg)
+    elif level == "warning":
+        _recruit_logger.warning(msg)
+    elif level == "error":
+        _recruit_logger.error(msg)
+    else:
+        _recruit_logger.info(msg)
+
+
+def _log_exception(event: str, *, request_id: str, **fields) -> None:
+    payload = {
+        "ts": int(time.time()),
+        "event": event,
+        "request_id": request_id,
+        **fields,
+    }
+    _recruit_logger.exception(json.dumps(payload, default=str, ensure_ascii=False))
+
 
 def register_doctor(request):
+    request_id = _get_request_id(request)
+    t0 = time.time()
+
+    _log(
+        "doctor_register.enter",
+        request_id=request_id,
+        method=request.method,
+        path=request.path,
+        master_db_module=getattr(master_db, "__file__", ""),
+    )
+
     # -----------------------------
     # GET
     # -----------------------------
     if request.method == "GET":
-        form = DoctorRegistrationForm(initial=request.GET)
-        return render(
-            request,
-            "accounts/register.html",
-            {"form": form, "mode": "register"},
+        _log(
+            "doctor_register.get",
+            request_id=request_id,
+            query_keys=list(request.GET.keys()),
+            campaign_id=(request.GET.get("campaign_id") or "").strip(),
+            field_rep_id=(request.GET.get("field_rep_id") or "").strip(),
         )
+        form = DoctorRegistrationForm(initial=request.GET)
+        return render(request, "accounts/register.html", {"form": form, "mode": "register"})
 
     # -----------------------------
     # POST
     # -----------------------------
+    _log(
+        "doctor_register.post_received",
+        request_id=request_id,
+        post_keys=list(request.POST.keys()),
+        has_files=bool(request.FILES),
+    )
+
     form = DoctorRegistrationForm(request.POST, request.FILES)
     if not form.is_valid():
-        return render(
-            request,
-            "accounts/register.html",
-            {"form": form, "mode": "register"},
+        # form.errors is safe to log (messages only); it does not include raw file content.
+        try:
+            errs = form.errors.get_json_data()
+        except Exception:
+            errs = str(form.errors)
+
+        _log(
+            "doctor_register.form_invalid",
+            request_id=request_id,
+            level="warning",
+            errors=errs,
         )
+        return render(request, "accounts/register.html", {"form": form, "mode": "register"})
 
     cd = form.cleaned_data
 
-    email = cd["email"].strip().lower()
-    whatsapp = cd["clinic_whatsapp_number"].strip()
+    email = (cd.get("email") or "").strip().lower()
+    whatsapp = (cd.get("clinic_whatsapp_number") or "").strip()
 
     campaign_id = (cd.get("campaign_id") or "").strip()
     field_rep_id = (cd.get("field_rep_id") or "").strip()
     recruited_via = "FIELD_REP" if field_rep_id else "SELF"
 
-    # --------------------------------------------------
-    # 1️⃣ CHECK EXISTING DOCTOR — MASTER DB
-    # --------------------------------------------------
-    existing_doctor_row = master_db.find_doctor_by_email_or_whatsapp(
-        email=email,
-        whatsapp=whatsapp,
+    _log(
+        "doctor_register.cleaned",
+        request_id=request_id,
+        email=_mask_email(email),
+        whatsapp=_mask_phone(whatsapp),
+        campaign_id=campaign_id,
+        field_rep_id=field_rep_id,
+        recruited_via=recruited_via,
     )
 
+    # --------------------------------------------------
+    # 1) CHECK EXISTING DOCTOR — MASTER DB
+    # --------------------------------------------------
+    _log(
+        "doctor_register.master_lookup_start",
+        request_id=request_id,
+        email=_mask_email(email),
+        whatsapp=_mask_phone(whatsapp),
+    )
+
+    try:
+        existing_doctor_row = master_db.find_doctor_by_email_or_whatsapp(
+            email=email,
+            whatsapp=whatsapp,
+        )
+    except Exception:
+        _log_exception(
+            "doctor_register.master_lookup_exception",
+            request_id=request_id,
+            email=_mask_email(email),
+            whatsapp=_mask_phone(whatsapp),
+        )
+        return HttpResponseServerError("Doctor registration failed (master DB lookup).")
+
+    # Your accounts/master_db.py returns MasterDoctor dataclass (NOT dict),
+    # but some code paths use dict indexing. Support both safely.
+    existing_doctor_id = ""
     if existing_doctor_row:
-        doctor = DoctorProfile.objects.filter(
-            doctor_id=existing_doctor_row["doctor_id"]
-        ).select_related("user").first()
+        if isinstance(existing_doctor_row, dict):
+            existing_doctor_id = str(existing_doctor_row.get("doctor_id") or "").strip()
+        else:
+            existing_doctor_id = str(getattr(existing_doctor_row, "doctor_id", "") or "").strip()
+
+    _log(
+        "doctor_register.master_lookup_result",
+        request_id=request_id,
+        found=bool(existing_doctor_id),
+        doctor_id=existing_doctor_id,
+    )
+
+    if existing_doctor_id:
+        # Portal DB doctor profile lookup (your current flow uses this for email sending)
+        doctor = (
+            DoctorProfile.objects.filter(doctor_id=existing_doctor_id)
+            .select_related("user")
+            .first()
+        )
+
+        _log(
+            "doctor_register.portal_doctorprofile_lookup",
+            request_id=request_id,
+            doctor_id=existing_doctor_id,
+            found=bool(doctor),
+        )
 
         if doctor:
             if campaign_id:
-                master_db.ensure_enrollment(
-                    doctor_id=doctor.doctor_id,
-                    campaign_id=campaign_id,
-                    registered_by=field_rep_id or None,
-                )
+                try:
+                    _log(
+                        "doctor_register.ensure_enrollment_start",
+                        request_id=request_id,
+                        doctor_id=existing_doctor_id,
+                        campaign_id=campaign_id,
+                        registered_by=field_rep_id or "",
+                    )
+                    master_db.ensure_enrollment(
+                        doctor_id=existing_doctor_id,
+                        campaign_id=campaign_id,
+                        registered_by=field_rep_id or "",
+                    )
+                    _log(
+                        "doctor_register.ensure_enrollment_ok",
+                        request_id=request_id,
+                        doctor_id=existing_doctor_id,
+                        campaign_id=campaign_id,
+                    )
+                except Exception:
+                    _log_exception(
+                        "doctor_register.ensure_enrollment_exception",
+                        request_id=request_id,
+                        doctor_id=existing_doctor_id,
+                        campaign_id=campaign_id,
+                    )
 
-            _send_doctor_links_email(
-                doctor,
-                campaign_id=campaign_id or None,
-                password_setup=True,
+            # Email
+            try:
+                sent = _send_doctor_links_email(
+                    doctor,
+                    campaign_id=campaign_id or None,
+                    password_setup=True,
+                )
+                _log(
+                    "doctor_register.email_sent_existing",
+                    request_id=request_id,
+                    doctor_id=existing_doctor_id,
+                    sent=bool(sent),
+                )
+            except Exception:
+                _log_exception(
+                    "doctor_register.email_exception_existing",
+                    request_id=request_id,
+                    doctor_id=existing_doctor_id,
+                )
+        else:
+            # This is a common failure mode: doctor exists in MASTER DB but not in portal DB.
+            _log(
+                "doctor_register.warning_master_exists_but_no_portal_profile",
+                request_id=request_id,
+                level="warning",
+                doctor_id=existing_doctor_id,
+                note="Doctor exists in master DB but DoctorProfile not found in portal DB.",
             )
+
+        _log(
+            "doctor_register.exit_already_registered",
+            request_id=request_id,
+            duration_ms=int((time.time() - t0) * 1000),
+        )
 
         return render(
             request,
@@ -215,29 +392,49 @@ def register_doctor(request):
         )
 
     # --------------------------------------------------
-    # 2️⃣ CREATE DOCTOR — MASTER DB
+    # 2) CREATE DOCTOR — MASTER DB
     # --------------------------------------------------
-    doctor_id = master_db.generate_doctor_id()
+    try:
+        doctor_id = master_db.generate_doctor_id()
+    except Exception:
+        _log_exception("doctor_register.generate_doctor_id_exception", request_id=request_id)
+        return HttpResponseServerError("Doctor registration failed (doctor_id generation).")
 
     photo_path = ""
     if cd.get("photo"):
-        photo_path = cd["photo"].name
+        try:
+            photo_path = cd["photo"].name
+        except Exception:
+            photo_path = ""
 
     state = (cd.get("state") or "").strip()
     district = (cd.get("district") or "").strip()
 
+    _log(
+        "doctor_register.master_create_start",
+        request_id=request_id,
+        doctor_id=doctor_id,
+        email=_mask_email(email),
+        whatsapp=_mask_phone(whatsapp),
+        campaign_id=campaign_id,
+        recruited_via=recruited_via,
+        has_photo=bool(photo_path),
+        state=state,
+        district=district,
+    )
+
     try:
         master_db.create_doctor_with_enrollment(
             doctor_id=doctor_id,
-            first_name=cd["first_name"].strip(),
-            last_name=cd["last_name"].strip(),
+            first_name=(cd.get("first_name") or "").strip(),
+            last_name=(cd.get("last_name") or "").strip(),
             email=email,
             whatsapp=whatsapp,
-            clinic_name=cd["clinic_name"].strip(),
-            clinic_phone=cd["clinic_appointment_number"].strip(),
-            clinic_address=cd["clinic_address"].strip(),
-            imc_number=cd["imc_registration_number"].strip(),
-            postal_code=cd["postal_code"].strip(),
+            clinic_name=(cd.get("clinic_name") or "").strip(),
+            clinic_phone=(cd.get("clinic_appointment_number") or "").strip(),
+            clinic_address=(cd.get("clinic_address") or "").strip(),
+            imc_number=(cd.get("imc_registration_number") or "").strip(),
+            postal_code=(cd.get("postal_code") or "").strip(),
             state=state or None,
             district=district or None,
             photo_path=photo_path,
@@ -245,42 +442,73 @@ def register_doctor(request):
             recruited_via=recruited_via,
             registered_by=field_rep_id or None,
         )
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        print("[Doctor registration failed] error ->", e)
-        return HttpResponseServerError(
-            "Doctor registration failed. Please try again later."
+        _log(
+            "doctor_register.master_create_ok",
+            request_id=request_id,
+            doctor_id=doctor_id,
         )
+    except Exception:
+        _log_exception(
+            "doctor_register.master_create_exception",
+            request_id=request_id,
+            doctor_id=doctor_id,
+        )
+        return HttpResponseServerError("Doctor registration failed. Please try again later.")
 
     # --------------------------------------------------
-    # 3️⃣ FETCH DOCTOR PROFILE & SEND LINKS
+    # 3) FETCH PORTAL DoctorProfile & SEND LINKS
     # --------------------------------------------------
-    doctor = DoctorProfile.objects.filter(
-        doctor_id=doctor_id
-    ).select_related("user").first()
+    doctor = DoctorProfile.objects.filter(doctor_id=doctor_id).select_related("user").first()
+    _log(
+        "doctor_register.portal_doctorprofile_postcreate",
+        request_id=request_id,
+        doctor_id=doctor_id,
+        found=bool(doctor),
+    )
 
     if doctor:
-        _send_doctor_links_email(
-            doctor,
-            campaign_id=campaign_id or None,
-            password_setup=True,
+        try:
+            sent = _send_doctor_links_email(
+                doctor,
+                campaign_id=campaign_id or None,
+                password_setup=True,
+            )
+            _log(
+                "doctor_register.email_sent_new",
+                request_id=request_id,
+                doctor_id=doctor_id,
+                sent=bool(sent),
+            )
+        except Exception:
+            _log_exception(
+                "doctor_register.email_exception_new",
+                request_id=request_id,
+                doctor_id=doctor_id,
+            )
+    else:
+        _log(
+            "doctor_register.warning_no_portal_profile_after_master_create",
+            request_id=request_id,
+            level="warning",
+            doctor_id=doctor_id,
+            note="Created in master DB, but DoctorProfile not found in portal DB. Email not sent.",
         )
+
+    _log(
+        "doctor_register.exit_success",
+        request_id=request_id,
+        doctor_id=doctor_id,
+        duration_ms=int((time.time() - t0) * 1000),
+    )
 
     return render(
         request,
         "accounts/register_success.html",
         {
             "doctor_id": doctor_id,
-            "clinic_link": _build_absolute_url(
-                reverse("sharing:doctor_share", args=[doctor_id])
-            ),
+            "clinic_link": _build_absolute_url(reverse("sharing:doctor_share", args=[doctor_id])),
         },
     )
-
-
-
-
 
 
 # ---------------------------------------------------------------------
