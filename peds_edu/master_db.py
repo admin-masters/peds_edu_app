@@ -1,9 +1,9 @@
-from __future__ import annotations
+print("Hello, World!")from __future__ import annotations
 
 import re
 import secrets
 from dataclasses import dataclass
-from typing import Any, Dict, Literal, Optional, Tuple
+from typing import Any, Dict, Literal, Optional, Tuple, List
 
 from django.conf import settings
 from django.contrib.auth.hashers import check_password, identify_hasher, make_password
@@ -404,3 +404,270 @@ def update_master_password(
                 [new_hash, doctor_id],
             )
     return True
+    
+# ---------------------------------------------------------------------
+# Campaign acknowledgements & banners (Doctor/Clinic sharing portal)
+# ---------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class PECampaignSupport:
+    campaign_id: str
+    video_cluster: str
+    brand: str
+    banner_small_url: str
+    banner_large_url: str
+    banner_target_url: str
+
+
+def _master_db_name() -> str:
+    conn = connections[_master_alias()]
+    return str((conn.settings_dict.get("NAME") or "")).strip()
+
+
+def _master_table_exists(table_name: str) -> bool:
+    """
+    Checks if a table exists in MASTER DB.
+    Uses information_schema when possible; falls back to a direct SELECT probe.
+    """
+    tn = _safe_identifier(table_name)
+    db = _master_db_name()
+    if not db:
+        return False
+
+    try:
+        with connections[_master_alias()].cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = %s AND table_name = %s
+                LIMIT 1
+                """,
+                [db, tn],
+            )
+            return cursor.fetchone() is not None
+    except Exception:
+        # Fallback: probe query
+        try:
+            with connections[_master_alias()].cursor() as cursor:
+                cursor.execute(f"SELECT 1 FROM `{tn}` LIMIT 1")
+                return True
+        except Exception:
+            return False
+
+
+def _master_table_columns(table_name: str) -> List[str]:
+    tn = _safe_identifier(table_name)
+    db = _master_db_name()
+    if not db:
+        return []
+    try:
+        with connections[_master_alias()].cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = %s AND table_name = %s
+                """,
+                [db, tn],
+            )
+            rows = cursor.fetchall() or []
+        return [str(r[0]) for r in rows if r and r[0]]
+    except Exception:
+        return []
+
+
+def _pick_first_col(cols: List[str], candidates: List[str]) -> Optional[str]:
+    m = {c.lower(): c for c in (cols or [])}
+    for cand in candidates:
+        if cand.lower() in m:
+            return m[cand.lower()]
+    return None
+
+
+def _uuid_hex_to_hyphenated(hex32: str) -> str:
+    """
+    Convert 32-hex UUID (no dashes) to standard UUID with dashes.
+    """
+    h = (hex32 or "").strip().replace("-", "")
+    if len(h) != 32:
+        return (hex32 or "").strip()
+    return f"{h[0:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:32]}"
+
+
+def _get_video_cluster_from_master_mapping(campaign_id: str) -> Optional[str]:
+    """
+    Attempts to read video_cluster from MASTER DB mapping table.
+    Your prompt references: campaign_videocluster in master DB.
+    The provided MASTER_DB_ALIAS.sql does not include this table, so this is best-effort.
+
+    Expected: a table (default 'campaign_videocluster') with columns including:
+      - campaign_id (or similar)
+      - video_cluster (or similar)
+    """
+    cid = (campaign_id or "").strip().replace("-", "")
+    if not cid:
+        return None
+
+    table = getattr(settings, "MASTER_CAMPAIGN_VIDEOCLUSTER_TABLE", "campaign_videocluster") or "campaign_videocluster"
+    try:
+        table = _safe_identifier(str(table))
+    except Exception:
+        table = "campaign_videocluster"
+
+    if not _master_table_exists(table):
+        return None
+
+    cols = _master_table_columns(table)
+    if not cols:
+        return None
+
+    campaign_col = _pick_first_col(cols, ["campaign_id", "campaign", "campaign_uuid"])
+    vc_col = _pick_first_col(
+        cols,
+        ["video_cluster", "video_cluster_code", "video_cluster_name", "video_cluster_id", "cluster", "cluster_code"],
+    )
+    if not campaign_col or not vc_col:
+        return None
+
+    cid_h = _uuid_hex_to_hyphenated(cid)
+
+    try:
+        with connections[_master_alias()].cursor() as cursor:
+            cursor.execute(
+                f"SELECT `{vc_col}` FROM `{table}` WHERE `{campaign_col}` = %s OR `{campaign_col}` = %s LIMIT 1",
+                [cid, cid_h],
+            )
+            row = cursor.fetchone()
+        if not row or row[0] is None:
+            return None
+        return str(row[0]).strip()
+    except Exception:
+        return None
+
+
+def _get_video_cluster_from_local_publisher_campaign(campaign_id: str) -> Optional[str]:
+    """
+    Fallback resolver:
+    publisher_campaign.campaign_id is a UUID string WITH dashes in default DB.
+    master campaign ids are usually CHAR(32) WITHOUT dashes.
+    """
+    cid = (campaign_id or "").strip().replace("-", "")
+    if not cid:
+        return None
+
+    try:
+        with connections["default"].cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT new_video_cluster_name
+                FROM publisher_campaign
+                WHERE REPLACE(campaign_id, '-', '') = %s
+                LIMIT 1
+                """,
+                [cid],
+            )
+            row = cursor.fetchone()
+        if row and row[0]:
+            return str(row[0]).strip()
+    except Exception:
+        return None
+
+    return None
+
+
+def resolve_campaign_video_cluster(*, campaign_id: str, campaign_name_fallback: str = "") -> str:
+    """
+    Priority:
+      1) MASTER mapping table (campaign_videocluster) if present
+      2) local default DB publisher_campaign.new_video_cluster_name
+      3) campaign name (from campaign_campaign.name)
+      4) campaign_id (last resort)
+    """
+    cid = (campaign_id or "").strip()
+    if not cid:
+        return (campaign_name_fallback or "").strip() or ""
+
+    vc = _get_video_cluster_from_master_mapping(cid)
+    if vc:
+        return vc
+
+    vc = _get_video_cluster_from_local_publisher_campaign(cid)
+    if vc:
+        return vc
+
+    return (campaign_name_fallback or "").strip() or cid
+
+
+def fetch_pe_campaign_support_for_doctor_email(email: str) -> List[Dict[str, str]]:
+    """
+    Returns a list of dictionaries suitable for templates:
+      [
+        {
+          "campaign_id": "...",
+          "video_cluster": "...",
+          "brand": "...",
+          "banner_small_url": "...",
+          "banner_large_url": "...",
+          "banner_target_url": "..."
+        }, ...
+      ]
+
+    Campaign membership is resolved via:
+      campaign_doctor (by email) -> campaign_doctorcampaignenrollment -> campaign_campaign
+    """
+    email_l = (email or "").strip().lower()
+    if not email_l:
+        return []
+
+    # Core campaign lookup: campaigns the doctor is enrolled in + system_pe=1
+    sql = """
+        SELECT
+            c.id,
+            c.name,
+            c.banner_small_url,
+            c.banner_large_url,
+            c.banner_target_url,
+            COALESCE(b.name, '') AS brand_name
+        FROM campaign_doctor d
+        JOIN campaign_doctorcampaignenrollment e ON e.doctor_id = d.id
+        JOIN campaign_campaign c ON c.id = e.campaign_id
+        LEFT JOIN campaign_brand b ON b.id = c.brand_id
+        WHERE LOWER(d.email) = %s
+          AND c.system_pe = 1
+        ORDER BY c.start_date DESC, c.created_at DESC, c.id ASC
+    """
+
+    try:
+        with connections[_master_alias()].cursor() as cursor:
+            cursor.execute(sql, [email_l])
+            rows = cursor.fetchall() or []
+    except Exception:
+        return []
+
+    out: List[Dict[str, str]] = []
+
+    for r in rows:
+        # Defensive unpack (MySQL returns tuples)
+        cid = str((r[0] if len(r) > 0 else "") or "").strip()
+        cname = str((r[1] if len(r) > 1 else "") or "").strip()
+        b_small = str((r[2] if len(r) > 2 else "") or "").strip()
+        b_large = str((r[3] if len(r) > 3 else "") or "").strip()
+        b_target = str((r[4] if len(r) > 4 else "") or "").strip()
+        brand = str((r[5] if len(r) > 5 else "") or "").strip()
+
+        video_cluster = resolve_campaign_video_cluster(campaign_id=cid, campaign_name_fallback=cname)
+        brand_name = brand or "our partner"
+
+        out.append(
+            {
+                "campaign_id": cid,
+                "video_cluster": video_cluster,
+                "brand": brand_name,
+                "banner_small_url": b_small,
+                "banner_large_url": b_large,
+                "banner_target_url": b_target,
+            }
+        )
+
+    return out
