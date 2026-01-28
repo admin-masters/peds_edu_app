@@ -127,23 +127,85 @@ def build_whatsapp_deeplink(raw_phone: str, message: str) -> str:
 # -------------------------------
 # MASTER: AuthorizedPublisher
 # -------------------------------
+# accounts/master_db.py
 
 def authorized_publisher_exists(email: str) -> bool:
     """
     Checks AuthorizedPublisher in MASTER DB.
+
+    FIX:
+      - Never raises (missing table/column previously caused 401 with no clarity)
+      - Tries configured table first, then a small list of common fallback table names
+      - Logs clear diagnostics (without leaking full email)
+
+    NOTE:
+      You should still set settings.MASTER_DB_AUTH_PUBLISHER_TABLE and
+      settings.MASTER_DB_AUTH_PUBLISHER_EMAIL_COLUMN correctly.
+      This fallback is to prevent silent breakage during schema drift.
     """
     e = (email or "").strip().lower()
     if not e:
+        _log_db("publisher_auth.empty_email", level="warning")
         return False
 
     conn = get_master_connection()
-    table = getattr(settings, "MASTER_DB_AUTH_PUBLISHER_TABLE", "publisher_authorizedpublisher")
-    email_col = getattr(settings, "MASTER_DB_AUTH_PUBLISHER_EMAIL_COLUMN", "email")
 
-    sql = f"SELECT 1 FROM {qn(table)} WHERE LOWER({qn(email_col)}) = LOWER(%s) LIMIT 1"
-    with conn.cursor() as cur:
-        cur.execute(sql, [e])
-        return cur.fetchone() is not None
+    # Configured values (may be wrong in deployments)
+    cfg_table = getattr(settings, "MASTER_DB_AUTH_PUBLISHER_TABLE", "publisher_authorizedpublisher")
+    cfg_col = getattr(settings, "MASTER_DB_AUTH_PUBLISHER_EMAIL_COLUMN", "email")
+
+    # Common fallbacks (safe to try)
+    candidates = [
+        (cfg_table, cfg_col),
+        ("campaign_authorizedpublisher", "email"),
+        ("publisher_authorizedpublisher", "email"),
+        ("authorized_publisher", "email"),
+        ("authorizedpublisher", "email"),
+    ]
+
+    masked = _mask_email_for_log(e)
+
+    last_err = None
+    for table, col in candidates:
+        try:
+            sql = f"SELECT 1 FROM {qn(table)} WHERE LOWER({qn(col)}) = LOWER(%s) LIMIT 1"
+            with conn.cursor() as cur:
+                cur.execute(sql, [e])
+                ok = cur.fetchone() is not None
+
+            _log_db(
+                "publisher_auth.check",
+                email=masked,
+                table=str(table),
+                col=str(col),
+                ok=bool(ok),
+            )
+            if ok:
+                return True
+
+        except Exception as ex:
+            # Table/column may not exist or permission error
+            last_err = f"{type(ex).__name__}: {ex}"
+            _log_db(
+                "publisher_auth.check_error",
+                level="warning",
+                email=masked,
+                table=str(table),
+                col=str(col),
+                error=last_err[:500],
+            )
+            continue
+
+    _log_db(
+        "publisher_auth.not_found",
+        level="warning",
+        email=masked,
+        configured_table=str(cfg_table),
+        configured_col=str(cfg_col),
+        last_error=(last_err[:500] if last_err else ""),
+    )
+    return False
+
 
 
 # -------------------------------
