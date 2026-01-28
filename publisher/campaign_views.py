@@ -47,24 +47,6 @@ from .models import Campaign
 # Helpers
 # -----------------------------
 SESSION_CAMPAIGN_META_BY_CAMPAIGN_KEY = "publisher_campaign_meta_by_campaign"
-from django.http import JsonResponse
-from .campaign_auth import get_publisher_claims
-
-@publisher_required
-def debug_session(request):
-    claims = get_publisher_claims(request) or {}
-    session_keys = list(request.session.keys())
-    sso_identity = request.session.get('sso_identity')
-    campaign_meta = request.session.get('publisher_campaign_meta_by_campaign')
-
-    return JsonResponse({
-        "claims": claims,
-        "session_keys": session_keys,
-        "sso_identity": sso_identity,
-        "campaign_meta": campaign_meta,
-    })
-
-
 
 def _capture_campaign_meta(request: HttpRequest, campaign_id: str | None) -> dict[str, Any]:
     """
