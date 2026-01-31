@@ -303,50 +303,59 @@ def resolve_master_doctor_auth(email: str, raw_password: str) -> Optional[Master
 
 def master_row_to_template_context(row: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """
-    Convert master row into template-compatible dicts:
-      - doctor.user.full_name, doctor.doctor_id, doctor.whatsapp_number, doctor.imc_number
-      - doctor.clinic.display_name, clinic_phone, clinic_whatsapp_number, address_text, state, postal_code
+    Map a raw MASTER DB doctor row (dict) into the template-friendly structures used across portal pages.
+
+    Important:
+      - We *derive* state from PIN when possible, to avoid stale/incorrect state values in MASTER DB.
+        (This fixes cases where a PIN from another state was saved with default 'Maharashtra'.)
     """
     fm = _field_map()
 
-    doctor_id = str(row.get(fm["doctor_id"], "") or "").strip()
-    first = str(row.get(fm["first_name"], "") or "")
-    last = str(row.get(fm["last_name"], "") or "")
-    full_name = _normalize_full_name(first, last) or "Doctor"
+    first = str(row.get(fm["first_name"]) or "").strip()
+    last = str(row.get(fm["last_name"]) or "").strip()
+    full = (f"{first} {last}").strip()
 
-    clinic_name = str(row.get(fm["clinic_name"], "") or "").strip()
-    clinic_display = clinic_name or f"Dr. {full_name}"
+    doctor_id = str(row.get(fm["doctor_id"]) or "").strip()
+    email = str(row.get(fm["email"]) or "").strip()
+    whatsapp = str(row.get(fm["whatsapp_no"]) or "").strip()
 
-    clinic_phone = str(row.get(fm["clinic_phone"], "") or "").strip()
-    clinic_whatsapp = str(row.get(fm["clinic_whatsapp"], "") or "").strip()
+    clinic_address = str(row.get(fm["clinic_address"]) or "").strip()
+    clinic_phone = str(row.get(fm["clinic_phone"]) or "").strip()
+    clinic_whatsapp = str(row.get(fm["clinic_whatsapp"]) or "").strip()
+    postal_code = str(row.get(fm["postal_code"]) or "").strip()
+    state_raw = str(row.get(fm["state"]) or "").strip()
 
-    clinic_address = str(row.get(fm["clinic_address"], "") or "").strip()
-    state = str(row.get(fm["state"], "") or "").strip()
-    postal_code = str(row.get(fm["postal_code"], "") or "").strip()
+    # Prefer state inferred from PIN (local lookup), if available.
+    inferred_state: Optional[str] = None
+    if postal_code:
+        try:
+            # Local dataset; no network dependency.
+            from accounts.pincode_directory import get_state_for_pincode, IndiaPincodeDirectoryNotReady  # type: ignore
+            inferred_state = get_state_for_pincode(postal_code)
+        except Exception:
+            inferred_state = None
 
-    doctor_whatsapp = str(row.get(fm["whatsapp_no"], "") or "").strip()
-    imc = str(row.get(fm["imc_number"], "") or "").strip()
+    state = (inferred_state or state_raw).strip()
 
-    clinic: Dict[str, Any] = {
-        "display_name": clinic_display,
+    doctor = {
+        "doctor_id": doctor_id,
+        "user": {
+            "full_name": full,
+            "email": email,
+        },
+        "whatsapp_number": whatsapp,
+        "imc_number": str(row.get(fm["imc_number"]) or "").strip(),
+    }
+
+    clinic = {
+        "clinic_name": str(row.get(fm["clinic_name"]) or "").strip(),
         "clinic_phone": clinic_phone,
         "clinic_whatsapp_number": clinic_whatsapp,
-        "address_text": clinic_address,
+        "address": clinic_address,
         "state": state,
         "postal_code": postal_code,
     }
 
-    doctor: Dict[str, Any] = {
-        "doctor_id": doctor_id,
-        "whatsapp_number": doctor_whatsapp,
-        "imc_number": imc,
-        "photo": None,  # optional: map photo if you have a URL/field to use
-        "user": {
-            "full_name": full_name,
-            "email": str(row.get(fm["email"], "") or "").strip(),
-        },
-        "clinic": clinic,
-    }
     return doctor, clinic
 
 
@@ -624,29 +633,74 @@ def resolve_campaign_video_cluster(*, campaign_id: str, campaign_name_fallback: 
     return (campaign_name_fallback or "").strip() or cid
 
 
-def fetch_pe_campaign_support_for_doctor_email(email: str) -> List[Dict[str, str]]:
+def fetch_pe_campaign_support_for_doctor_email(
+    email: str,
+    *,
+    extra_emails: "Sequence[str]" = (),
+    phones: "Sequence[str]" = (),
+) -> List[Dict[str, str]]:
     """
-    Returns a list of dictionaries suitable for templates:
-      [
-        {
-          "campaign_id": "...",
-          "video_cluster": "...",
-          "brand": "...",
-          "banner_small_url": "...",
-          "banner_large_url": "...",
-          "banner_target_url": "..."
-        }, ...
-      ]
+    Return PE-campaign acknowledgements + banner URLs for a doctor/clinic user.
 
-    Campaign membership is resolved via:
-      campaign_doctor (by email) -> campaign_doctorcampaignenrollment -> campaign_campaign
+    Matching logic (robust):
+      - Primary match is campaign_doctor.email (case-insensitive).
+      - If not present / not matching (common when staff logs in via clinic_user email),
+        we also try additional emails and phone numbers.
+      - Phone match uses last-10-digits comparison against campaign_doctor.phone.
+
+    Output keys per item:
+      - campaign_id, campaign_name, video_cluster, brand, banner_small_url, banner_large_url, banner_target_url
     """
-    email_l = (email or "").strip().lower()
-    if not email_l:
+
+    def _norm_emails(values: "Sequence[str]") -> List[str]:
+        seen = set()
+        out_: List[str] = []
+        for v in values or ():
+            s = (v or "").strip().lower()
+            if s and s not in seen:
+                seen.add(s)
+                out_.append(s)
+        return out_
+
+    def _norm_phones(values: "Sequence[str]") -> List[str]:
+        seen = set()
+        out_: List[str] = []
+        for v in values or ():
+            digits = re.sub(r"\D", "", str(v or ""))
+            if not digits:
+                continue
+            last10 = digits[-10:] if len(digits) > 10 else digits
+            if last10 and last10 not in seen:
+                seen.add(last10)
+                out_.append(last10)
+        return out_
+
+    primary_email = (email or "").strip()
+    email_candidates = _norm_emails([primary_email, *list(extra_emails or [])])
+    phone_candidates = _norm_phones(list(phones or []))
+
+    if not email_candidates and not phone_candidates:
         return []
 
-    # Core campaign lookup: campaigns the doctor is enrolled in + system_pe=1
-    sql = """
+    where_parts: List[str] = []
+    params: List[Any] = []
+
+    if email_candidates:
+        where_parts.append(
+            "LOWER(d.email) IN (" + ",".join(["%s"] * len(email_candidates)) + ")"
+        )
+        params.extend(email_candidates)
+
+    if phone_candidates:
+        # campaign_doctor.phone is typically stored as digits; we compare last-10 to handle +91 prefixes.
+        where_parts.append(
+            "RIGHT(d.phone, 10) IN (" + ",".join(["%s"] * len(phone_candidates)) + ")"
+        )
+        params.extend(phone_candidates)
+
+    where_sql = " OR ".join(where_parts)
+
+    sql = f"""
         SELECT
             c.id,
             c.name,
@@ -658,43 +712,49 @@ def fetch_pe_campaign_support_for_doctor_email(email: str) -> List[Dict[str, str
         JOIN campaign_doctorcampaignenrollment e ON e.doctor_id = d.id
         JOIN campaign_campaign c ON c.id = e.campaign_id
         LEFT JOIN campaign_brand b ON b.id = c.brand_id
-        WHERE LOWER(d.email) = %s
+        WHERE ({where_sql})
           AND c.system_pe = 1
+          AND e.active = 1
         ORDER BY c.start_date DESC, c.created_at DESC, c.id ASC
     """
 
-    try:
-        with connections[_master_alias()].cursor() as cursor:
-            cursor.execute(sql, [email_l])
-            rows = cursor.fetchall() or []
-    except Exception:
-        return []
+    with connections[_master_alias()].cursor() as cursor:
+        cursor.execute(sql, params)
+        rows = cursor.fetchall()
 
     out: List[Dict[str, str]] = []
+    seen_campaign_ids = set()
 
-    for r in rows:
-        # Defensive unpack (MySQL returns tuples)
-        cid = str((r[0] if len(r) > 0 else "") or "").strip()
-        cname = str((r[1] if len(r) > 1 else "") or "").strip()
-        b_small = str((r[2] if len(r) > 2 else "") or "").strip()
-        b_large = str((r[3] if len(r) > 3 else "") or "").strip()
-        b_target = str((r[4] if len(r) > 4 else "") or "").strip()
-        if not b_target:
-            b_target = _get_banner_target_url_from_local_publisher_campaign(cid) or ""
+    for r in rows or []:
+        cid = (r[0] or "")
+        if not cid or cid in seen_campaign_ids:
+            continue
+        seen_campaign_ids.add(cid)
 
-        brand = str((r[5] if len(r) > 5 else "") or "").strip()
+        cname = str(r[1] or "").strip()
+        vcluster = resolve_campaign_video_cluster(campaign_id=str(cid), campaign_name_fallback=cname)
+        brand = str(r[5] or "").strip()
 
-        video_cluster = resolve_campaign_video_cluster(campaign_id=cid, campaign_name_fallback=cname)
-        brand_name = brand or "our partner"
+        banner_small_url = str(r[2] or "").strip()
+        banner_large_url = str(r[3] or "").strip()
+        banner_target_url = str(r[4] or "").strip()
+
+        # Fallback: if master has no target URL, try local publisher_campaign.banner_target_url
+        if not banner_target_url:
+            try:
+                banner_target_url = _get_banner_target_url_from_local_publisher_campaign(str(cid)) or ""
+            except Exception:
+                banner_target_url = ""
 
         out.append(
             {
-                "campaign_id": cid,
-                "video_cluster": video_cluster,
-                "brand": brand_name,
-                "banner_small_url": b_small,
-                "banner_large_url": b_large,
-                "banner_target_url": b_target,
+                "campaign_id": str(cid),
+                "campaign_name": cname,
+                "video_cluster": vcluster,
+                "brand": brand,
+                "banner_small_url": banner_small_url,
+                "banner_large_url": banner_large_url,
+                "banner_target_url": banner_target_url,
             }
         )
 
