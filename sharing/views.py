@@ -1,25 +1,37 @@
 from __future__ import annotations
 
 import json
-import logging
-from typing import Any, Dict
 
-from django.conf.global_settings import LANGUAGES
 from django.contrib.auth.decorators import login_required
-from django.http import HttpRequest, HttpResponse, JsonResponse, HttpResponseForbidden
-from django.shortcuts import render
-from django.urls import reverse
+from django.http import HttpRequest, HttpResponse, HttpResponseForbidden
+from django.shortcuts import get_object_or_404, redirect, render
 
-from peds_edu.catalog_cache import get_catalog_json_cached
+from accounts.models import DoctorProfile
+from catalog.constants import LANGUAGE_CODES, LANGUAGES
+from catalog.models import (
+    Video,
+    VideoLanguage,
+    VideoCluster,
+    VideoClusterLanguage,
+)
+
 from peds_edu.master_db import (
     fetch_master_doctor_row_by_id,
     master_row_to_template_context,
+    build_patient_link_payload,
+    sign_patient_payload,
+    unsign_patient_payload,
     fetch_pe_campaign_support_for_doctor_email,
 )
-from peds_edu.patient_payload import build_patient_link_payload, sign_patient_payload
-from sharing.message_prefix import build_whatsapp_message_prefixes
 
-logger = logging.getLogger(__name__)
+
+
+from .services import build_whatsapp_message_prefixes, get_catalog_json_cached
+
+
+def home(request: HttpRequest) -> HttpResponse:
+    # Keep a simple redirect to login
+    return redirect("accounts:login")
 
 
 @login_required
@@ -108,24 +120,122 @@ def doctor_share(request: HttpRequest, doctor_id: str) -> HttpResponse:
     )
 
 
-@login_required
-def patient_video(request: HttpRequest) -> HttpResponse:
-    """
-    Patient video page: reads signed 'd' payload from query, merges it into template context.
-    """
-    payload = request.GET.get("d", "")
-    # This view is unchanged in your codebase; keep as-is if you already have it.
-    # (Leaving existing implementation below.)
-    from sharing.patient_views import patient_video as impl  # type: ignore
+def patient_video(request: HttpRequest, doctor_id: str, video_code: str) -> HttpResponse:
+    # Doctor/clinic display info comes from the signed payload (no DB query)
+    token = (request.GET.get("d") or "").strip()
+    payload = unsign_patient_payload(token) or {}
 
-    return impl(request)
+    doctor = payload.get("doctor") if isinstance(payload.get("doctor"), dict) else {}
+    clinic = payload.get("clinic") if isinstance(payload.get("clinic"), dict) else {}
+
+    # Ensure template-safe structure (doctor.user.full_name must exist)
+    if not isinstance(doctor.get("user"), dict):
+        doctor["user"] = {"full_name": ""}
+
+    # Optional: trust the path doctor_id as canonical
+    doctor["doctor_id"] = doctor_id
+    doctor.setdefault("photo", None)
+
+    clinic.setdefault("display_name", "")
+    clinic.setdefault("clinic_phone", "")
+    clinic.setdefault("clinic_whatsapp_number", "")
+    clinic.setdefault("address_text", "")
+    clinic.setdefault("state", "")
+    clinic.setdefault("postal_code", "")
+
+    lang = request.GET.get("lang", "en")
+    if lang not in LANGUAGE_CODES:
+        lang = "en"
+
+    video = get_object_or_404(Video, code=video_code)
+
+    vlang = (
+        VideoLanguage.objects.filter(video=video, language_code=lang).first()
+        or VideoLanguage.objects.filter(video=video, language_code="en").first()
+    )
+
+    return render(
+        request,
+        "sharing/patient_video.html",
+        {
+            "doctor": doctor,
+            "clinic": clinic,
+            "video": video,
+            "vlang": vlang,
+            "languages": LANGUAGES,
+            "selected_lang": lang,
+            "show_auth_links": False,
+        },
+    )
 
 
-@login_required
-def api_video_list(request: HttpRequest) -> JsonResponse:
-    """
-    JSON list of videos (used by JS). This view is unchanged in your codebase; keep as-is if you already have it.
-    """
-    from sharing.api import api_video_list as impl  # type: ignore
+def patient_cluster(request: HttpRequest, doctor_id: str, cluster_code: str) -> HttpResponse:
+    # Doctor/clinic display info comes from the signed payload (no DB query)
+    token = (request.GET.get("d") or "").strip()
+    payload = unsign_patient_payload(token) or {}
 
-    return impl(request)
+    doctor = payload.get("doctor") if isinstance(payload.get("doctor"), dict) else {}
+    clinic = payload.get("clinic") if isinstance(payload.get("clinic"), dict) else {}
+
+    if not isinstance(doctor.get("user"), dict):
+        doctor["user"] = {"full_name": ""}
+
+    doctor["doctor_id"] = doctor_id
+    doctor.setdefault("photo", None)
+
+    clinic.setdefault("display_name", "")
+    clinic.setdefault("clinic_phone", "")
+    clinic.setdefault("clinic_whatsapp_number", "")
+    clinic.setdefault("address_text", "")
+    clinic.setdefault("state", "")
+    clinic.setdefault("postal_code", "")
+
+    lang = request.GET.get("lang", "en")
+    if lang not in LANGUAGE_CODES:
+        lang = "en"
+
+    cluster = VideoCluster.objects.filter(code=cluster_code).first()
+    if cluster is None and cluster_code.isdigit():
+        cluster = get_object_or_404(VideoCluster, pk=int(cluster_code))
+    elif cluster is None:
+        cluster = get_object_or_404(VideoCluster, pk=-1)
+
+    cl_lang = (
+        VideoClusterLanguage.objects.filter(video_cluster=cluster, language_code=lang).first()
+        or VideoClusterLanguage.objects.filter(video_cluster=cluster, language_code="en").first()
+    )
+    cluster_title = cl_lang.name if cl_lang else cluster.code
+
+    try:
+        videos = cluster.videos.all().order_by("sort_order", "id")
+    except Exception:
+        videos = cluster.videos.all().order_by("id")
+
+    items = []
+    for v in videos:
+        vlang = (
+            VideoLanguage.objects.filter(video=v, language_code=lang).first()
+            or VideoLanguage.objects.filter(video=v, language_code="en").first()
+        )
+        items.append(
+            {
+                "video": v,
+                "title": (vlang.title if vlang else v.code),
+                "url": (vlang.youtube_url if vlang else ""),
+            }
+        )
+
+    return render(
+        request,
+        "sharing/patient_cluster.html",
+        {
+            "doctor": doctor,
+            "clinic": clinic,
+            "cluster": cluster,
+            "cluster_title": cluster_title,
+            "items": items,
+            "languages": LANGUAGES,
+            "selected_lang": lang,
+            "show_auth_links": False,
+        },
+    )
