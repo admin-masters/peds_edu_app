@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import json
 from typing import Any, Dict, List
 
@@ -18,6 +19,14 @@ class CampaignCreateForm(forms.Form):
     selected_items_json = forms.CharField(
         widget=forms.HiddenInput(),
         required=True,
+    )
+
+    # ✅ Re-added (Project2 fallback only when MASTER banner_target_url is blank)
+    banner_target_url = forms.URLField(
+        max_length=500,
+        required=False,
+        label="Banner click URL",
+        help_text="Optional. Used only if MASTER campaign banner click URL is blank.",
     )
 
     email_registration = forms.CharField(
@@ -58,13 +67,16 @@ class CampaignCreateForm(forms.Form):
         for item in data:
             if not isinstance(item, dict):
                 continue
+
             t = str(item.get("type") or "").strip().lower()
             if t not in ("video", "cluster"):
                 continue
+
             try:
                 i = int(item.get("id"))
             except Exception:
                 continue
+
             cleaned.append({"type": t, "id": i})
 
         if not cleaned:
@@ -78,6 +90,10 @@ class CampaignCreateForm(forms.Form):
         name = (cleaned.get("new_video_cluster_name") or "").strip()
         if name:
             cleaned["new_video_cluster_name"] = name
+
+        # Normalize banner_target_url
+        if "banner_target_url" in cleaned:
+            cleaned["banner_target_url"] = (cleaned.get("banner_target_url") or "").strip()
 
         sd = cleaned.get("start_date")
         ed = cleaned.get("end_date")
