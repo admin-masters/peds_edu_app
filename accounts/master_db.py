@@ -233,59 +233,86 @@ class MasterCampaign:
     new_video_cluster_name: str
     email_registration: str
 
+    # NEW (MASTER DB already stores these)
+    banner_small_url: str = ""
+    banner_large_url: str = ""
+    banner_target_url: str = ""
+
+
 
 def get_campaign(campaign_id: str) -> Optional[MasterCampaign]:
-    """
-    MASTER Campaign lookup for the admin-project schema.
+    """Fetch campaign details from the MASTER DB.
 
-    - Campaign PK column is 'id' (UUIDField).
-    - In MySQL, UUIDField is typically stored as CHAR(32) without hyphens.
-    - Accepts both:
-        7ea0883d-9791-4703-b569-c1f9f8d25705  (hyphenated)
-        7ea0883d97914703b569c1f9f8d25705      (hex)
+    Returns None if not found. Accepts both hyphenated UUIDs and 32-char UUIDs.
+
+    Backwards-compatible:
+    - If banner_* columns are not present in the MASTER DB (older schema), it falls back to the
+      legacy SELECT and returns empty banner URLs.
     """
-    cid_raw = (campaign_id or "").strip()
-    if not cid_raw:
+    if not campaign_id:
         return None
-
-    cid_norm = cid_raw.replace("-", "")
-
-    conn = get_master_connection()
 
     table = getattr(settings, "MASTER_DB_CAMPAIGN_TABLE", "campaign_campaign")
     id_col = getattr(settings, "MASTER_DB_CAMPAIGN_ID_COLUMN", "id")
-
     ds_col = getattr(settings, "MASTER_DB_CAMPAIGN_DOCTORS_SUPPORTED_COLUMN", "num_doctors_supported")
     wa_col = getattr(settings, "MASTER_DB_CAMPAIGN_WA_ADDITION_COLUMN", "add_to_campaign_message")
     vc_col = getattr(settings, "MASTER_DB_CAMPAIGN_VIDEO_CLUSTER_COLUMN", "name")
     er_col = getattr(settings, "MASTER_DB_CAMPAIGN_EMAIL_REGISTRATION_COLUMN", "register_message")
 
-    sql = (
-        f"SELECT {qn(id_col)}, {qn(ds_col)}, {qn(wa_col)}, {qn(vc_col)}, {qn(er_col)} "
+    # NEW: banner fields (stored in MASTER)
+    bs_col = getattr(settings, "MASTER_DB_CAMPAIGN_BANNER_SMALL_URL_COLUMN", "banner_small_url")
+    bl_col = getattr(settings, "MASTER_DB_CAMPAIGN_BANNER_LARGE_URL_COLUMN", "banner_large_url")
+    bt_col = getattr(settings, "MASTER_DB_CAMPAIGN_BANNER_TARGET_URL_COLUMN", "banner_target_url")
+
+    cid_raw = str(campaign_id).strip()
+    cid_norm = cid_raw.replace("-", "")
+
+    sql_with_banners = (
+        f"SELECT {qn(id_col)}, {qn(ds_col)}, {qn(wa_col)}, {qn(vc_col)}, {qn(er_col)}, {qn(bs_col)}, {qn(bl_col)}, {qn(bt_col)} "
         f"FROM {qn(table)} "
-        f"WHERE {qn(id_col)} = %s OR {qn(id_col)} = %s "
-        f"LIMIT 1"
+        f"WHERE {qn(id_col)} = %s OR {qn(id_col)} = %s"
     )
 
-    with conn.cursor() as cur:
-        cur.execute(sql, [cid_norm, cid_raw])
-        row = cur.fetchone()
+    sql_legacy = (
+        f"SELECT {qn(id_col)}, {qn(ds_col)}, {qn(wa_col)}, {qn(vc_col)}, {qn(er_col)} "
+        f"FROM {qn(table)} "
+        f"WHERE {qn(id_col)} = %s OR {qn(id_col)} = %s"
+    )
+
+    row = None
+    with get_master_connection().cursor() as cursor:
+        try:
+            cursor.execute(sql_with_banners, [cid_norm, cid_raw])
+            row = cursor.fetchone()
+            if row:
+                return MasterCampaign(
+                    campaign_id=row[0],
+                    doctors_supported=row[1],
+                    wa_addition=row[2],
+                    new_video_cluster_name=row[3],
+                    email_registration=row[4],
+                    banner_small_url=row[5] or "",
+                    banner_large_url=row[6] or "",
+                    banner_target_url=row[7] or "",
+                )
+        except Exception:
+            # Older MASTER schema: fall back without banner fields
+            row = None
+
+        cursor.execute(sql_legacy, [cid_norm, cid_raw])
+        row = cursor.fetchone()
 
     if not row:
         return None
 
-    try:
-        doctors_supported = int(row[1] or 0)
-    except Exception:
-        doctors_supported = 0
-
     return MasterCampaign(
-        campaign_id=str(row[0] or "").strip(),  # will typically be CHAR(32) (no hyphens)
-        doctors_supported=doctors_supported,
-        wa_addition=str(row[2] or ""),          # mapped from add_to_campaign_message
-        new_video_cluster_name=str(row[3] or ""),  # mapped from name
-        email_registration=str(row[4] or ""),   # mapped from register_message
+        campaign_id=row[0],
+        doctors_supported=row[1],
+        wa_addition=row[2],
+        new_video_cluster_name=row[3],
+        email_registration=row[4],
     )
+
 
 
 
