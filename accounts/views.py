@@ -13,7 +13,8 @@ from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 
 from .forms import DoctorRegistrationForm, DoctorClinicDetailsForm, EmailAuthenticationForm, DoctorSetPasswordForm
-from .pincode_directory import IndiaPincodeDirectoryNotReady, get_state_and_district_for_pincode
+from .pincode_directory import IndiaPincodeDirectoryNotReady, get_state_and_district_for_pincode, get_state_for_pincode
+
 from publisher.models import Campaign
 from . import master_db
 
@@ -190,6 +191,13 @@ def _log_exception(event: str, *, request_id: str, **fields) -> None:
 
 
 def register_doctor(request):
+    """
+    Register a doctor into MASTER DB and (optionally) enroll into a campaign.
+
+    FIX:
+      - Derive state from PIN (postal_code) when possible, instead of relying on the form's
+        state dropdown (which often defaults to Maharashtra and causes wrong state display later).
+    """
     request_id = _get_request_id(request)
     t0 = time.time()
 
@@ -213,7 +221,11 @@ def register_doctor(request):
             field_rep_id=(request.GET.get("field_rep_id") or "").strip(),
         )
         form = DoctorRegistrationForm(initial=request.GET)
-        return render(request, "accounts/register.html", {"form": form, "mode": "register"})
+        return render(
+            request,
+            "accounts/register.html",
+            {"form": form, "mode": "register"},
+        )
 
     # -----------------------------
     # POST
@@ -227,7 +239,6 @@ def register_doctor(request):
 
     form = DoctorRegistrationForm(request.POST, request.FILES)
     if not form.is_valid():
-        # form.errors is safe to log (messages only); it does not include raw file content.
         try:
             errs = form.errors.get_json_data()
         except Exception:
@@ -239,7 +250,11 @@ def register_doctor(request):
             level="warning",
             errors=errs,
         )
-        return render(request, "accounts/register.html", {"form": form, "mode": "register"})
+        return render(
+            request,
+            "accounts/register.html",
+            {"form": form, "mode": "register"},
+        )
 
     cd = form.cleaned_data
 
@@ -250,6 +265,24 @@ def register_doctor(request):
     field_rep_id = (cd.get("field_rep_id") or "").strip()
     recruited_via = "FIELD_REP" if field_rep_id else "SELF"
 
+    postal_code = (cd.get("postal_code") or "").strip()
+
+    # --------------------------------------------------
+    # STATE / DISTRICT (PIN-BASED OVERRIDE)
+    # --------------------------------------------------
+    form_state = (cd.get("state") or "").strip()
+    district = (cd.get("district") or "").strip()
+
+    inferred_state = None
+    try:
+        inferred_state = get_state_for_pincode(postal_code)
+    except IndiaPincodeDirectoryNotReady:
+        inferred_state = None
+    except Exception:
+        inferred_state = None
+
+    state = inferred_state or form_state or "Maharashtra"
+
     _log(
         "doctor_register.cleaned",
         request_id=request_id,
@@ -258,6 +291,10 @@ def register_doctor(request):
         campaign_id=campaign_id,
         field_rep_id=field_rep_id,
         recruited_via=recruited_via,
+        postal_code=postal_code,
+        state=state,
+        district=district,
+        state_source="PIN" if inferred_state else ("FORM" if form_state else "DEFAULT"),
     )
 
     # --------------------------------------------------
@@ -284,14 +321,14 @@ def register_doctor(request):
         )
         return HttpResponseServerError("Doctor registration failed (master DB lookup).")
 
-    # Your accounts/master_db.py returns MasterDoctor dataclass (NOT dict),
-    # but some code paths use dict indexing. Support both safely.
     existing_doctor_id = ""
     if existing_doctor_row:
         if isinstance(existing_doctor_row, dict):
             existing_doctor_id = str(existing_doctor_row.get("doctor_id") or "").strip()
         else:
-            existing_doctor_id = str(getattr(existing_doctor_row, "doctor_id", "") or "").strip()
+            existing_doctor_id = str(
+                getattr(existing_doctor_row, "doctor_id", "") or ""
+            ).strip()
 
     _log(
         "doctor_register.master_lookup_result",
@@ -301,7 +338,6 @@ def register_doctor(request):
     )
 
     if existing_doctor_id:
-        # Portal DB doctor profile lookup (your current flow uses this for email sending)
         doctor = (
             DoctorProfile.objects.filter(doctor_id=existing_doctor_id)
             .select_related("user")
@@ -344,7 +380,6 @@ def register_doctor(request):
                         campaign_id=campaign_id,
                     )
 
-            # Email
             try:
                 sent = _send_doctor_links_email(
                     doctor,
@@ -364,7 +399,6 @@ def register_doctor(request):
                     doctor_id=existing_doctor_id,
                 )
         else:
-            # This is a common failure mode: doctor exists in MASTER DB but not in portal DB.
             _log(
                 "doctor_register.warning_master_exists_but_no_portal_profile",
                 request_id=request_id,
@@ -397,8 +431,13 @@ def register_doctor(request):
     try:
         doctor_id = master_db.generate_doctor_id()
     except Exception:
-        _log_exception("doctor_register.generate_doctor_id_exception", request_id=request_id)
-        return HttpResponseServerError("Doctor registration failed (doctor_id generation).")
+        _log_exception(
+            "doctor_register.generate_doctor_id_exception",
+            request_id=request_id,
+        )
+        return HttpResponseServerError(
+            "Doctor registration failed (doctor_id generation)."
+        )
 
     photo_path = ""
     if cd.get("photo"):
@@ -407,8 +446,8 @@ def register_doctor(request):
         except Exception:
             photo_path = ""
 
-    state = (cd.get("state") or "").strip()
-    district = (cd.get("district") or "").strip()
+    state = state
+    district = district
 
     _log(
         "doctor_register.master_create_start",
@@ -432,24 +471,18 @@ def register_doctor(request):
             last_name=(cd.get("last_name") or "").strip(),
             email=email,
             whatsapp=whatsapp,
-
             clinic_name=cd["clinic_name"].strip(),
-
             clinic_phone=cd["clinic_appointment_number"].strip(),
             clinic_appointment_number=cd["clinic_appointment_number"].strip(),
-
             clinic_address=cd["clinic_address"].strip(),
             imc_number=cd["imc_registration_number"].strip(),
-            postal_code=cd["postal_code"].strip(),
-            state=(cd.get("state") or "").strip() or "Maharashtra",
-            district=(cd.get("district") or "").strip(),
+            postal_code=postal_code,
+            state=state,
+            district=district,
             photo_path=photo_path,
-
             campaign_id=campaign_id or None,
             recruited_via=recruited_via,
             registered_by=field_rep_id or None,
-
-            # NEW
             initial_password_raw=temp_password,
         )
 
@@ -461,10 +494,18 @@ def register_doctor(request):
                 last_name=(cd.get("last_name") or "").strip(),
                 temp_password=temp_password,
             )
-            _log("doctor_register.email_master_sent", request_id=request_id, doctor_id=doctor_id, ok=ok)
+            _log(
+                "doctor_register.email_master_sent",
+                request_id=request_id,
+                doctor_id=doctor_id,
+                ok=ok,
+            )
         except Exception:
-            _log_exception("doctor_register.email_master_exception", request_id=request_id, doctor_id=doctor_id)
-
+            _log_exception(
+                "doctor_register.email_master_exception",
+                request_id=request_id,
+                doctor_id=doctor_id,
+            )
 
         _log(
             "doctor_register.master_create_ok",
@@ -477,46 +518,9 @@ def register_doctor(request):
             request_id=request_id,
             doctor_id=doctor_id,
         )
-        return HttpResponseServerError("Doctor registration failed. Please try again later.")
-
-    # --------------------------------------------------
-    # 3) FETCH PORTAL DoctorProfile & SEND LINKS
-    # --------------------------------------------------
-    # doctor = DoctorProfile.objects.filter(doctor_id=doctor_id).select_related("user").first()
-    # _log(
-    #     "doctor_register.portal_doctorprofile_postcreate",
-    #     request_id=request_id,
-    #     doctor_id=doctor_id,
-    #     found=bool(doctor),
-    # )
-    #
-    # if doctor:
-    #     try:
-    #         sent = _send_doctor_links_email(
-    #             doctor,
-    #             campaign_id=campaign_id or None,
-    #             password_setup=True,
-    #         )
-    #         _log(
-    #             "doctor_register.email_sent_new",
-    #             request_id=request_id,
-    #             doctor_id=doctor_id,
-    #             sent=bool(sent),
-    #         )
-    #     except Exception:
-    #         _log_exception(
-    #             "doctor_register.email_exception_new",
-    #             request_id=request_id,
-    #             doctor_id=doctor_id,
-    #         )
-    # else:
-    #     _log(
-    #         "doctor_register.warning_no_portal_profile_after_master_create",
-    #         request_id=request_id,
-    #         level="warning",
-    #         doctor_id=doctor_id,
-    #         note="Created in master DB, but DoctorProfile not found in portal DB. Email not sent.",
-    #     )
+        return HttpResponseServerError(
+            "Doctor registration failed. Please try again later."
+        )
 
     _log(
         "doctor_register.exit_success",
@@ -530,10 +534,11 @@ def register_doctor(request):
         "accounts/register_success.html",
         {
             "doctor_id": doctor_id,
-            "clinic_link": _build_absolute_url(reverse("sharing:doctor_share", args=[doctor_id])),
+            "clinic_link": _build_absolute_url(
+                reverse("sharing:doctor_share", args=[doctor_id])
+            ),
         },
     )
-
 
 # ---------------------------------------------------------------------
 # Modify clinic details (from doctor's sharing screen)
