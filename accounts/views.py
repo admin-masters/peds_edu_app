@@ -489,8 +489,12 @@ def register_doctor(request):
             whatsapp=doctor_whatsapp,
             receptionist_whatsapp_number=clinic_whatsapp,
             clinic_name=cd["clinic_name"].strip(),
-            clinic_phone=cd["clinic_number"].strip(),
-            clinic_appointment_number=cd["clinic_appointment_number"].strip(),
+            clinic_phone=(
+            (cd.get("clinic_number") or "").strip()
+            or (cd.get("clinic_phone") or "").strip()
+            or (cd.get("clinic_appointment_number") or "").strip()
+                ),
+            clinic_appointment_number=(cd.get("clinic_appointment_number") or "").strip(),
             clinic_address=cd["clinic_address"].strip(),
             imc_number=cd["imc_registration_number"].strip(),
             postal_code=postal_code,
