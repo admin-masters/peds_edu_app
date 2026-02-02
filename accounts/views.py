@@ -430,7 +430,8 @@ def register_doctor(request):
     # 2) CREATE DOCTOR — MASTER DB
     # --------------------------------------------------
     try:
-        doctor_id = master_db.generate_doctor_id()
+        doctor_id = master_db.create_master_doctor_id()
+
     except Exception:
         _log_exception(
             "doctor_register.generate_doctor_id_exception",
