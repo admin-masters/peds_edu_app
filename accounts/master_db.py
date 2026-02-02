@@ -1193,3 +1193,19 @@ def get_doctor_by_whatsapp(whatsapp_number: str) -> Optional[MasterDoctorLite]:
         full_name=full_name,
         whatsapp_no=wa,
     )
+
+# -----------------------------------------------------------------------------
+# Compatibility aliases (do NOT remove)
+# -----------------------------------------------------------------------------
+
+# Re-export temporary password generator from peds_edu.master_db
+try:
+    from peds_edu.master_db import generate_temporary_password as _gen_tmp_pwd
+except Exception:
+    _gen_tmp_pwd = None
+
+
+def generate_temporary_password(length: int = 10) -> str:
+    if not _gen_tmp_pwd:
+        raise RuntimeError("Temporary password generator not available")
+    return _gen_tmp_pwd(length=length)
