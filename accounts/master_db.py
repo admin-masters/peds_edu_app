@@ -127,7 +127,7 @@ def authorized_publisher_exists(email: str) -> bool:
  #   return getattr(settings, "MASTER_DB_ALIAS", "master")
 
 def master_alias() -> str:
-    return getattr(settings, "MASTER_DB_ALIAS", "MASTER_DB_ALIAS")
+    return getattr(settings, "MASTER_DB_ALIAS", "master")
 
 
 def get_master_connection():
@@ -492,10 +492,44 @@ def _resolve_registered_by_fieldrep_id(conn, *, campaign_id_norm: str, registere
     Supported real-world inputs:
       - "15" (fieldrep id OR join-table pk)
       - "fieldrep_15" (token style)
+      - "FR09" (brand_supplied_field_rep_id)
     """
     raw = (registered_by or "").strip()
     if not raw:
         return None
+
+    # 0) Direct lookup in campaign_fieldrep (pk or external brand-supplied id)
+    try:
+        fr = get_field_rep(raw)  # supports pk id, token ids, and brand_supplied_field_rep_id (FR09)
+        if fr:
+            return int(fr.id)
+    except Exception:
+        pass
+
+    # Extract trailing digits (handles "fieldrep_15")
+    m = re.search(r"(\d+)$", raw)
+    if not m:
+        return None
+
+    try:
+        cand = int(m.group(1))
+    except Exception:
+        return None
+
+    # 1) direct campaign_fieldrep.id
+    if _row_exists_by_id(conn, "campaign_fieldrep", cand, id_col="id"):
+        return cand
+
+    # 2) treat as join-table pk in campaign_campaignfieldrep => resolve to field_rep_id
+    try:
+        fr_id = get_campaign_fieldrep_link_fieldrep_id(campaign_id=campaign_id_norm, link_pk=cand)
+    except Exception:
+        fr_id = None
+
+    if fr_id and _row_exists_by_id(conn, "campaign_fieldrep", int(fr_id), id_col="id"):
+        return int(fr_id)
+
+    return None
 
     # Extract trailing digits (handles "fieldrep_15")
     m = re.search(r"(\d+)$", raw)
@@ -753,6 +787,7 @@ def ensure_enrollment(*, doctor_id: str, campaign_id: str, registered_by: str) -
 
 def create_doctor_with_enrollment(
     *,
+    doctor_id: str = "",
     first_name: str,
     last_name: str,
     email: str,
@@ -767,45 +802,112 @@ def create_doctor_with_enrollment(
     district: str,
     receptionist_whatsapp_number: str,
     photo_path: str,
-    campaign_id: str,
-    registered_by: str,
+    campaign_id: str = "",
+    registered_by: str = "",
+    recruited_via: str = "",
+    initial_password_raw: str | None = None,
 ) -> str:
     """
     Creates doctor in MASTER redflags_doctor and enrolls into campaign tables.
-    Returns created doctor_id (DRxxxxxx).
+    Returns created doctor_id (e.g. DR123456).
+
+    IMPORTANT (MASTER DB schema alignment):
+      - redflags_doctor has several NOT NULL columns without defaults (clinic_password_hash,
+        clinic_user1_*, clinic_user2_*). Django model fields allow NULL, so we MUST supply
+        values explicitly to avoid IntegrityError.
+      - Portal login uses clinic_password_hash; we store a Django hash when
+        initial_password_raw is provided.
     """
+
     alias = master_alias()
-    doctor_id = create_master_doctor_id()
+
+    # ------------------------------------------------------------------
+    # doctor_id (optional pre-generated) — avoid collisions
+    # ------------------------------------------------------------------
+    did = (doctor_id or "").strip()
+    if not did:
+        for _ in range(15):
+            cand = create_master_doctor_id()
+            try:
+                if not RedflagsDoctor.objects.using(alias).filter(doctor_id=cand).exists():
+                    did = cand
+                    break
+            except Exception:
+                # If the existence check fails (rare), fall back to the candidate
+                did = cand
+                break
+        if not did:
+            did = create_master_doctor_id()
+
+    # ------------------------------------------------------------------
+    # Normalize inputs and guarantee NOT NULL columns get non-NULL values
+    # ------------------------------------------------------------------
+    email_l = (email or "").strip().lower()
+
+    wa = normalize_wa_for_lookup(whatsapp_no) or (whatsapp_no or "").strip()
+    rec_wa = normalize_wa_for_lookup(receptionist_whatsapp_number) or (receptionist_whatsapp_number or "").strip()
+
+    campaign_id_s = (campaign_id or "").strip()
+    registered_by_s = (registered_by or "").strip()
+
+    recruited_via_s = (recruited_via or "").strip()
+    if not recruited_via_s:
+        recruited_via_s = "FIELD_REP" if registered_by_s else "SELF"
+
+    # Password handling (MASTER stores clinic_password_hash)
+    pwd_hash = ""
+    pwd_set_at = None
+    if initial_password_raw:
+        pwd_hash = make_password(initial_password_raw)
+        try:
+            pwd_set_at = timezone.now()
+        except Exception:
+            pwd_set_at = None
+
+    # MASTER schema requires these NOT NULL (empty string is OK)
+    user1_name = ""
+    user1_email = ""
+    user1_pwd = ""
+    user2_name = ""
+    user2_email = ""
+    user2_pwd = ""
 
     with transaction.atomic(using=alias):
-        # Create doctor in redflags_doctor (ORM)
         doc = RedflagsDoctor(
-            doctor_id=doctor_id,
+            doctor_id=did,
             first_name=(first_name or "").strip(),
             last_name=(last_name or "").strip(),
-            email=(email or "").strip().lower(),
+            email=email_l,
+            whatsapp_no=wa,
             clinic_name=(clinic_name or "").strip(),
-            imc_registration_number=(imc_registration_number or "").strip(),
             clinic_phone=(clinic_phone or "").strip(),
             clinic_appointment_number=(clinic_appointment_number or "").strip(),
             clinic_address=(clinic_address or "").strip(),
+            imc_registration_number=(imc_registration_number or "").strip(),
+            photo=(photo_path or "").strip() or None,
             postal_code=(postal_code or "").strip(),
             state=(state or "").strip(),
             district=(district or "").strip(),
-            whatsapp_no=normalize_wa_for_lookup(whatsapp_no) or (whatsapp_no or "").strip(),
-            receptionist_whatsapp_number=normalize_wa_for_lookup(receptionist_whatsapp_number) or (receptionist_whatsapp_number or "").strip(),
-            photo=(photo_path or "").strip(),
-            field_rep_id=(registered_by or "").strip(),
-            recruited_via="FIELD_REP" if registered_by else "SELF",
-            password=make_password(secrets.token_urlsafe(12)),  # temp, not used if you manage separately
+            receptionist_whatsapp_number=rec_wa,
+            field_rep_id=registered_by_s or "",
+            recruited_via=recruited_via_s,
+            clinic_password_hash=pwd_hash,
+            clinic_password_set_at=pwd_set_at,
+            clinic_user1_name=user1_name,
+            clinic_user1_email=user1_email,
+            clinic_user1_password_hash=user1_pwd,
+            clinic_user2_name=user2_name,
+            clinic_user2_email=user2_email,
+            clinic_user2_password_hash=user2_pwd,
         )
         doc.save(using=alias)
 
-        # Enroll into campaign tables (FIXED)
-        if campaign_id:
-            ensure_enrollment(doctor_id=doctor_id, campaign_id=campaign_id, registered_by=registered_by or "")
+        # Enroll into campaign tables (best-effort; ensure_enrollment never raises by design)
+        if campaign_id_s:
+            ensure_enrollment(doctor_id=did, campaign_id=campaign_id_s, registered_by=registered_by_s or "")
 
-    return doctor_id
+    return did
+
 
 
 # =============================================================================
@@ -1198,59 +1300,71 @@ def get_doctor_by_whatsapp(whatsapp_number: str) -> Optional[MasterDoctorLite]:
 # Compatibility aliases (do NOT remove)
 # -----------------------------------------------------------------------------
 
-# Re-export temporary password generator from peds_edu.master_db
+# Keep a local fallback generator so registration never fails because of an import issue.
 try:
-    from peds_edu.master_db import generate_temporary_password as _gen_tmp_pwd
+    from peds_edu.master_db import generate_temporary_password as _gen_tmp_pwd  # type: ignore
 except Exception:
     _gen_tmp_pwd = None
 
 
 def generate_temporary_password(length: int = 10) -> str:
-    if not _gen_tmp_pwd:
-        raise RuntimeError("Temporary password generator not available")
-    return _gen_tmp_pwd(length=length)
+    if _gen_tmp_pwd:
+        try:
+            return _gen_tmp_pwd(length=length)
+        except Exception:
+            pass
+
+    # Fallback: excludes ambiguous characters for phone dictation.
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
+    try:
+        n = max(8, int(length))
+    except Exception:
+        n = 10
+    return "".join(secrets.choice(alphabet) for _ in range(n))
 
 
-# =============================================================================
-# Compatibility wrapper for create_doctor_with_enrollment
-# (keeps existing views working without changes)
-# =============================================================================
+def generate_doctor_id() -> str:
+    return create_master_doctor_id()
+
+
+# Preserve the core implementation before overriding the public name below.
+_create_doctor_with_enrollment_impl = create_doctor_with_enrollment
+
 
 def create_doctor_with_enrollment_compat(**kwargs) -> str:
-    """
-    Compatibility wrapper to accept legacy/new call signatures from accounts.views.
+    """Backwards/forwards compatible wrapper for create_doctor_with_enrollment()."""
+    rec_wa = (
+        (kwargs.get("receptionist_whatsapp_number") or "").strip()
+        or (kwargs.get("clinic_whatsapp_number") or "").strip()
+        or (kwargs.get("clinic_whatsapp") or "").strip()
+    )
 
-    This function normalizes arguments and delegates to the real
-    create_doctor_with_enrollment() defined above.
-    """
-
-    # Map aliases / tolerate extra args
     mapped = {
-        "first_name": kwargs.get("first_name", ""),
-        "last_name": kwargs.get("last_name", ""),
-        "email": kwargs.get("email", ""),
-        "whatsapp_no": kwargs.get("whatsapp_no") or kwargs.get("whatsapp") or "",
-        "clinic_name": kwargs.get("clinic_name", ""),
-        "imc_registration_number": kwargs.get("imc_registration_number")
-            or kwargs.get("imc_number") or "",
-        "clinic_phone": kwargs.get("clinic_phone", ""),
-        "clinic_appointment_number": kwargs.get("clinic_appointment_number", ""),
-        "clinic_address": kwargs.get("clinic_address", ""),
-        "postal_code": kwargs.get("postal_code", ""),
-        "state": kwargs.get("state", ""),
-        "district": kwargs.get("district", ""),
-        "receptionist_whatsapp_number": kwargs.get("receptionist_whatsapp_number", ""),
-        "photo_path": kwargs.get("photo_path", ""),
-        "campaign_id": kwargs.get("campaign_id") or "",
-        "registered_by": kwargs.get("registered_by") or "",
+        "doctor_id": (kwargs.get("doctor_id") or "").strip(),
+        "first_name": (kwargs.get("first_name") or "").strip(),
+        "last_name": (kwargs.get("last_name") or "").strip(),
+        "email": (kwargs.get("email") or "").strip(),
+        # Some legacy call sites used "whatsapp" instead of "whatsapp_no"
+        "whatsapp_no": (kwargs.get("whatsapp_no") or kwargs.get("whatsapp") or "").strip(),
+        "clinic_name": (kwargs.get("clinic_name") or "").strip(),
+        # Legacy call sites used "imc_number"
+        "imc_registration_number": (kwargs.get("imc_registration_number") or kwargs.get("imc_number") or "").strip(),
+        "clinic_phone": (kwargs.get("clinic_phone") or "").strip(),
+        "clinic_appointment_number": (kwargs.get("clinic_appointment_number") or "").strip(),
+        "clinic_address": (kwargs.get("clinic_address") or "").strip(),
+        "postal_code": (kwargs.get("postal_code") or "").strip(),
+        "state": (kwargs.get("state") or "").strip(),
+        "district": (kwargs.get("district") or "").strip(),
+        "receptionist_whatsapp_number": rec_wa,
+        "photo_path": (kwargs.get("photo_path") or "").strip(),
+        "campaign_id": (kwargs.get("campaign_id") or "").strip(),
+        "registered_by": (kwargs.get("registered_by") or "").strip(),
+        "recruited_via": (kwargs.get("recruited_via") or "").strip(),
+        "initial_password_raw": kwargs.get("initial_password_raw"),
     }
 
-    # Delegate to the real implementation
-    return create_doctor_with_enrollment(**mapped)
+    return _create_doctor_with_enrollment_impl(**mapped)
 
 
-# -----------------------------------------------------------------------------
-# Backward-compat alias so existing views keep working
-# -----------------------------------------------------------------------------
+# Alias to preserve the name used across the project.
 create_doctor_with_enrollment = create_doctor_with_enrollment_compat
-
