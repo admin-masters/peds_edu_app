@@ -5,7 +5,7 @@ import json
 from django.contrib.auth.decorators import login_required
 from django.http import HttpRequest, HttpResponse, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
-from django.db import connections  # <-- ADDED
+from django.db import connections
 
 from accounts.models import DoctorProfile
 from catalog.constants import LANGUAGE_CODES, LANGUAGES
@@ -18,6 +18,7 @@ from catalog.models import (
 
 from peds_edu.master_db import (
     fetch_master_doctor_row_by_id,
+    fetch_master_doctor_row_by_email,  # <-- ADDED (non-destructive)
     master_row_to_template_context,
     build_patient_link_payload,
     sign_patient_payload,
@@ -38,13 +39,15 @@ def _fetch_all_campaign_bundle_codes():
     """
     try:
         with connections["default"].cursor() as cur:
-            cur.execute("""
+            cur.execute(
+                """
                 SELECT vc.code
                 FROM publisher_campaign pc
                 JOIN catalog_videocluster vc ON vc.id = pc.video_cluster_id
-            """)
+                """
+            )
             rows = cur.fetchall()
-        return {str(r[0]) for r in rows if r and r[0]}
+        return {str(r[0]).strip() for r in (rows or []) if r and r[0]}
     except Exception:
         return set()
 
@@ -53,7 +56,7 @@ def _fetch_allowed_bundle_codes_for_campaigns(campaign_ids):
     """
     Given MASTER campaign IDs, return bundle codes allowed for this doctor.
     """
-    ids = [str(c).replace("-", "") for c in campaign_ids if c]
+    ids = [str(c).strip().replace("-", "") for c in (campaign_ids or []) if str(c).strip()]
     if not ids:
         return set()
 
@@ -69,13 +72,12 @@ def _fetch_allowed_bundle_codes_for_campaigns(campaign_ids):
         with connections["default"].cursor() as cur:
             cur.execute(sql, ids)
             rows = cur.fetchall()
-        return {str(r[0]) for r in rows if r and r[0]}
+        return {str(r[0]).strip() for r in (rows or []) if r and r[0]}
     except Exception:
         return set()
 
 
 def home(request: HttpRequest) -> HttpResponse:
-    # Keep a simple redirect to login
     return redirect("accounts:login")
 
 
@@ -87,6 +89,7 @@ def doctor_share(request: HttpRequest, doctor_id: str) -> HttpResponse:
       - Loads display fields from master DB redflags_doctor.
       - Injects a signed doctor/clinic payload into catalog_json so JS can append it to patient links.
       - Adds PE campaign acknowledgements + banners (from MASTER DB campaign_campaign) at bottom of page.
+      - Filters campaign-specific clusters to only those campaigns the doctor is enrolled in.
     """
     session_doctor_id = request.session.get("master_doctor_id")
     if not session_doctor_id or session_doctor_id != doctor_id:
@@ -97,10 +100,27 @@ def doctor_share(request: HttpRequest, doctor_id: str) -> HttpResponse:
     except Exception:
         row = None
 
+    # ------------------------------------------------------------------
+    # NEW: if doctor_id in URL is stale/incorrect, recover via login email
+    # This change is ONLY applied in the not-found path; otherwise no behavior change.
+    # ------------------------------------------------------------------
     if not row:
+        login_email = (request.session.get("master_login_email") or getattr(request.user, "email", "") or "").strip().lower()
+        if login_email:
+            try:
+                row2 = fetch_master_doctor_row_by_email(login_email)
+            except Exception:
+                row2 = None
+
+            if row2:
+                correct_doctor_id = str(row2.get("doctor_id") or "").strip()
+                if correct_doctor_id and correct_doctor_id != doctor_id:
+                    request.session["master_doctor_id"] = correct_doctor_id
+                    return redirect("sharing:doctor_share", doctor_id=correct_doctor_id)
+
         return HttpResponseForbidden("Doctor not found")
 
-    # Build template-friendly dicts (also normalizes state from PIN)
+    # Build template-friendly dicts
     doctor_ctx, clinic_ctx = master_row_to_template_context(row)
     doctor_name = ((doctor_ctx.get("user") or {}).get("full_name") or "").strip()
 
@@ -161,9 +181,7 @@ def doctor_share(request: HttpRequest, doctor_id: str) -> HttpResponse:
         if isinstance(item, dict) and item.get("campaign_id")
     ]
 
-    allowed_bundle_codes = _fetch_allowed_bundle_codes_for_campaigns(
-        allowed_campaign_ids
-    )
+    allowed_bundle_codes = _fetch_allowed_bundle_codes_for_campaigns(allowed_campaign_ids)
 
     if all_campaign_bundle_codes and "bundles" in catalog_json:
         filtered_bundles = []
@@ -197,7 +215,6 @@ def doctor_share(request: HttpRequest, doctor_id: str) -> HttpResponse:
             "clinic": clinic_ctx,
             "catalog_json": catalog_json,
             "languages": LANGUAGES,
-            # Hide "Modify Clinic Details" when using master DB
             "show_modify_clinic_details": False,
             "pe_campaign_support": pe_campaign_support,
         },
@@ -205,18 +222,15 @@ def doctor_share(request: HttpRequest, doctor_id: str) -> HttpResponse:
 
 
 def patient_video(request: HttpRequest, doctor_id: str, video_code: str) -> HttpResponse:
-    # Doctor/clinic display info comes from the signed payload (no DB query)
     token = (request.GET.get("d") or "").strip()
     payload = unsign_patient_payload(token) or {}
 
     doctor = payload.get("doctor") if isinstance(payload.get("doctor"), dict) else {}
     clinic = payload.get("clinic") if isinstance(payload.get("clinic"), dict) else {}
 
-    # Ensure template-safe structure (doctor.user.full_name must exist)
     if not isinstance(doctor.get("user"), dict):
         doctor["user"] = {"full_name": ""}
 
-    # Optional: trust the path doctor_id as canonical
     doctor["doctor_id"] = doctor_id
     doctor.setdefault("photo", None)
 
@@ -246,15 +260,14 @@ def patient_video(request: HttpRequest, doctor_id: str, video_code: str) -> Http
             "clinic": clinic,
             "video": video,
             "vlang": vlang,
+            "lang": lang,
             "languages": LANGUAGES,
-            "selected_lang": lang,
             "show_auth_links": False,
         },
     )
 
 
 def patient_cluster(request: HttpRequest, doctor_id: str, cluster_code: str) -> HttpResponse:
-    # Doctor/clinic display info comes from the signed payload (no DB query)
     token = (request.GET.get("d") or "").strip()
     payload = unsign_patient_payload(token) or {}
 
