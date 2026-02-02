@@ -27,6 +27,53 @@ import logging
 _master_logger = logging.getLogger("accounts.master_db")
 _MASTER_CONN_LOGGED = False
 
+def authorized_publisher_exists(email: str) -> bool:
+    """
+    Checks AuthorizedPublisher in MASTER DB.
+
+    Tries configured table first, then a few fallback table names.
+    Never raises (returns False on errors), but logs diagnostics.
+    """
+    e = (email or "").strip().lower()
+    if not e:
+        _log_db("publisher_auth.empty_email")
+        return False
+
+    conn = get_master_connection()
+
+    cfg_table = getattr(settings, "MASTER_DB_AUTH_PUBLISHER_TABLE", "publisher_authorizedpublisher")
+    cfg_col = getattr(settings, "MASTER_DB_AUTH_PUBLISHER_EMAIL_COLUMN", "email")
+
+    candidates = [
+        (cfg_table, cfg_col),
+        ("campaign_authorizedpublisher", "email"),
+        ("publisher_authorizedpublisher", "email"),
+        ("authorized_publisher", "email"),
+        ("authorizedpublisher", "email"),
+    ]
+
+    last_err = None
+    for table, col in candidates:
+        try:
+            sql = f"SELECT 1 FROM {qn(table)} WHERE LOWER({qn(col)}) = LOWER(%s) LIMIT 1"
+            with conn.cursor() as cur:
+                cur.execute(sql, [e])
+                if cur.fetchone() is not None:
+                    _log_db("publisher_auth.ok", table=table, col=col)
+                    return True
+
+            _log_db("publisher_auth.no_match", table=table, col=col)
+
+        except Exception as ex:
+            last_err = f"{type(ex).__name__}: {ex}"
+            _log_db("publisher_auth.check_error", table=table, col=col, error=last_err)
+            continue
+
+    _log_db("publisher_auth.not_found", configured_table=cfg_table, configured_col=cfg_col, last_error=last_err or "")
+    return False
+
+def master_alias() -> str:
+    return getattr(settings, "MASTER_DB_ALIAS", "master")
 
 def master_alias() -> str:
     return getattr(settings, "MASTER_DB_ALIAS", "MASTER_DB_ALIAS")
