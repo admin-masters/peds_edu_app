@@ -806,3 +806,105 @@ def create_doctor_with_enrollment(
             ensure_enrollment(doctor_id=doctor_id, campaign_id=campaign_id, registered_by=registered_by or "")
 
     return doctor_id
+
+
+# =============================================================================
+# Campaign fetch (MASTER DB) — robust + includes banners
+# DO NOT MOVE ABOVE: kept at end so it safely overrides any older get_campaign()
+# =============================================================================
+
+@dataclass(frozen=True)
+class MasterCampaign:
+    campaign_id: str
+    doctors_supported: int
+    wa_addition: str
+    new_video_cluster_name: str
+    email_registration: str
+
+    # NEW: banner URLs stored in MASTER campaign_campaign
+    banner_small_url: str = ""
+    banner_large_url: str = ""
+    banner_target_url: str = ""
+
+
+def get_campaign(campaign_id: str) -> Optional[MasterCampaign]:
+    """
+    Fetch campaign details from MASTER DB (campaign_campaign).
+
+    Must support:
+      - UUID with hyphens (9ca882cf-13da-...)
+      - 32-hex without hyphens (9ca882cf13da...)
+
+    Must return banner_small_url / banner_large_url / banner_target_url.
+    """
+    cid_raw = (campaign_id or "").strip()
+    if not cid_raw:
+        return None
+
+    cid_norm = cid_raw.replace("-", "")
+
+    conn = get_master_connection()
+
+    table = getattr(settings, "MASTER_DB_CAMPAIGN_TABLE", "campaign_campaign")
+    id_col = getattr(settings, "MASTER_DB_CAMPAIGN_ID_COLUMN", "id")
+
+    ds_col = getattr(settings, "MASTER_DB_CAMPAIGN_DOCTORS_SUPPORTED_COLUMN", "num_doctors_supported")
+    wa_col = getattr(settings, "MASTER_DB_CAMPAIGN_WA_ADDITION_COLUMN", "add_to_campaign_message")
+    vc_col = getattr(settings, "MASTER_DB_CAMPAIGN_VIDEO_CLUSTER_COLUMN", "name")
+    er_col = getattr(settings, "MASTER_DB_CAMPAIGN_EMAIL_REGISTRATION_COLUMN", "register_message")
+
+    # banner cols are fixed in your schema; allow override via settings if ever needed
+    bs_col = getattr(settings, "MASTER_DB_CAMPAIGN_BANNER_SMALL_URL_COLUMN", "banner_small_url")
+    bl_col = getattr(settings, "MASTER_DB_CAMPAIGN_BANNER_LARGE_URL_COLUMN", "banner_large_url")
+    bt_col = getattr(settings, "MASTER_DB_CAMPAIGN_BANNER_TARGET_URL_COLUMN", "banner_target_url")
+
+    # Some DBs store id as CHAR(32) (no hyphens). We query both.
+    sql = (
+        f"SELECT {qn(id_col)}, {qn(ds_col)}, {qn(wa_col)}, {qn(vc_col)}, {qn(er_col)}, "
+        f"{qn(bs_col)}, {qn(bl_col)}, {qn(bt_col)} "
+        f"FROM {qn(table)} "
+        f"WHERE {qn(id_col)} = %s OR {qn(id_col)} = %s "
+        f"LIMIT 1"
+    )
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql, [cid_norm, cid_raw])
+            row = cur.fetchone()
+    except Exception as ex:
+        _log_db_exc(
+            "master_db.get_campaign.error",
+            campaign_id=cid_raw,
+            campaign_id_norm=cid_norm,
+            table=table,
+            id_col=id_col,
+            error=f"{type(ex).__name__}: {ex}",
+        )
+        return None
+
+    if not row:
+        _log_db(
+            "master_db.get_campaign.not_found",
+            campaign_id=cid_raw,
+            campaign_id_norm=cid_norm,
+            table=table,
+            id_col=id_col,
+        )
+        return None
+
+    # row layout matches SELECT order
+    try:
+        ds_val = int(row[1] or 0)
+    except Exception:
+        ds_val = 0
+
+    return MasterCampaign(
+        campaign_id=str(row[0] or "").strip(),
+        doctors_supported=ds_val,
+        wa_addition=str(row[2] or ""),
+        new_video_cluster_name=str(row[3] or ""),
+        email_registration=str(row[4] or ""),
+        banner_small_url=str(row[5] or ""),
+        banner_large_url=str(row[6] or ""),
+        banner_target_url=str(row[7] or ""),
+    )
