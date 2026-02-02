@@ -1209,3 +1209,48 @@ def generate_temporary_password(length: int = 10) -> str:
     if not _gen_tmp_pwd:
         raise RuntimeError("Temporary password generator not available")
     return _gen_tmp_pwd(length=length)
+
+
+# =============================================================================
+# Compatibility wrapper for create_doctor_with_enrollment
+# (keeps existing views working without changes)
+# =============================================================================
+
+def create_doctor_with_enrollment_compat(**kwargs) -> str:
+    """
+    Compatibility wrapper to accept legacy/new call signatures from accounts.views.
+
+    This function normalizes arguments and delegates to the real
+    create_doctor_with_enrollment() defined above.
+    """
+
+    # Map aliases / tolerate extra args
+    mapped = {
+        "first_name": kwargs.get("first_name", ""),
+        "last_name": kwargs.get("last_name", ""),
+        "email": kwargs.get("email", ""),
+        "whatsapp_no": kwargs.get("whatsapp_no") or kwargs.get("whatsapp") or "",
+        "clinic_name": kwargs.get("clinic_name", ""),
+        "imc_registration_number": kwargs.get("imc_registration_number")
+            or kwargs.get("imc_number") or "",
+        "clinic_phone": kwargs.get("clinic_phone", ""),
+        "clinic_appointment_number": kwargs.get("clinic_appointment_number", ""),
+        "clinic_address": kwargs.get("clinic_address", ""),
+        "postal_code": kwargs.get("postal_code", ""),
+        "state": kwargs.get("state", ""),
+        "district": kwargs.get("district", ""),
+        "receptionist_whatsapp_number": kwargs.get("receptionist_whatsapp_number", ""),
+        "photo_path": kwargs.get("photo_path", ""),
+        "campaign_id": kwargs.get("campaign_id") or "",
+        "registered_by": kwargs.get("registered_by") or "",
+    }
+
+    # Delegate to the real implementation
+    return create_doctor_with_enrollment(**mapped)
+
+
+# -----------------------------------------------------------------------------
+# Backward-compat alias so existing views keep working
+# -----------------------------------------------------------------------------
+create_doctor_with_enrollment = create_doctor_with_enrollment_compat
+
