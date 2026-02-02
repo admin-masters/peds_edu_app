@@ -1016,3 +1016,103 @@ def get_field_rep(field_rep_id: str) -> Optional[MasterFieldRep]:
         _log_db_exc("master_db.get_field_rep.external_lookup_error", field_rep_id=raw, error=f"{type(ex).__name__}: {ex}")
 
     return None
+
+# =============================================================================
+# Enrollment count (MASTER DB) — robust override
+# Appended at end intentionally (does not remove any existing code).
+# =============================================================================
+
+def count_campaign_enrollments(campaign_id: str) -> int:
+    """
+    Counts enrolled doctors for a campaign in MASTER DB.
+
+    Supports both possible schemas:
+
+    A) New campaigns schema:
+       - table: campaign_doctorcampaignenrollment
+       - columns: campaign_id (CHAR32), doctor_id (BIGINT FK -> campaign_doctor.id)
+       - may optionally have: active
+
+    B) Legacy schema (older admin DB):
+       - table: DoctorCampaignEnrollment (or settings.MASTER_DB_ENROLLMENT_TABLE)
+       - columns commonly: campaign_id, doctor_id
+       - may optionally have: active
+
+    Always returns int, never raises.
+    """
+    cid_raw = (campaign_id or "").strip()
+    if not cid_raw:
+        return 0
+
+    # Normalize to 32-char (no hyphens) for campaign tables that store char32 IDs
+    cid_norm = cid_raw.replace("-", "")
+
+    conn = get_master_connection()
+
+    # Prefer the actual campaign enrollment table if present
+    preferred = "campaign_doctorcampaignenrollment"
+    configured = getattr(settings, "MASTER_DB_ENROLLMENT_TABLE", "") or ""
+    candidates = [preferred]
+    if configured and configured not in candidates:
+        candidates.append(configured)
+
+    # Fallbacks you might have in older DBs
+    for t in ("DoctorCampaignEnrollment", "campaign_doctor_campaigns"):
+        if t not in candidates:
+            candidates.append(t)
+
+    table = None
+    for t in candidates:
+        try:
+            if _table_exists(conn, t):
+                table = t
+                break
+        except Exception:
+            continue
+
+    if not table:
+        _log_db("master_db.count_campaign_enrollments.no_table", campaign_id=cid_raw)
+        return 0
+
+    # Identify columns safely (case-insensitive)
+    try:
+        cols = _get_table_columns(conn, table)
+        cols_l = {c.lower(): c for c in cols}
+    except Exception:
+        cols = []
+        cols_l = {}
+
+    campaign_col = cols_l.get("campaign_id") or getattr(settings, "MASTER_DB_ENROLLMENT_CAMPAIGN_COLUMN", "campaign_id")
+    doctor_col = cols_l.get("doctor_id") or getattr(settings, "MASTER_DB_ENROLLMENT_DOCTOR_COLUMN", "doctor_id")
+
+    # Optional active column
+    active_col = cols_l.get("active")
+
+    # Build WHERE: try both cid_norm and cid_raw because some tables store hyphenated UUIDs
+    where = f"{qn(campaign_col)} = %s OR {qn(campaign_col)} = %s"
+    params = [cid_norm, cid_raw]
+
+    if active_col:
+        where = f"({where}) AND {qn(active_col)} = 1"
+
+    # Count distinct doctors
+    sql = f"""
+        SELECT COUNT(DISTINCT {qn(doctor_col)})
+        FROM {qn(table)}
+        WHERE {where}
+    """
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+            row = cur.fetchone()
+        return int(row[0] or 0) if row else 0
+    except Exception as ex:
+        _log_db_exc(
+            "master_db.count_campaign_enrollments.error",
+            table=table,
+            campaign_id=cid_raw,
+            campaign_id_norm=cid_norm,
+            error=f"{type(ex).__name__}: {ex}",
+        )
+        return 0
