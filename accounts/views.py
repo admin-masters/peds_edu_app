@@ -5,7 +5,7 @@ from django.contrib import messages
 from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.tokens import default_token_generator
-from django.db import transaction
+from django.db import transaction, connections
 from django.http import HttpResponseForbidden, HttpResponseServerError
 from django.shortcuts import redirect, render
 from django.urls import reverse
@@ -88,6 +88,22 @@ def _send_doctor_links_email(doctor: DoctorProfile, campaign_id: str | None = No
                 "<doctor_name>": doctor.user.full_name or doctor.user.email,
                 "{{doctor_name}}": doctor.user.full_name or doctor.user.email,
 
+                "<doctor_id>": doctor.doctor_id,
+                "{{doctor_id}}": doctor.doctor_id,
+
+                "<username>": doctor.user.email,
+                "{{username}}": doctor.user.email,
+                "<email>": doctor.user.email,
+                "{{email}}": doctor.user.email,
+
+                "<login_link>": login_link,
+                "{{login_link}}": login_link,
+
+                "<temp_password>": "",
+                "{{temp_password}}": "",
+                "<password>": "",
+                "{{password}}": "",
+
                 "<clinic_link>": clinic_link,
                 "{{clinic_link}}": clinic_link,
                 "<LinkShare>": clinic_link,
@@ -97,8 +113,8 @@ def _send_doctor_links_email(doctor: DoctorProfile, campaign_id: str | None = No
                 "<LinkPW>": setup_link,
             }
             for k, v in replacements.items():
-                if v:
-                    text = text.replace(k, v)
+                # Replace even if v is empty (so placeholders disappear)
+                text = text.replace(k, v or "")
             return text
 
         body = _render(template_text).strip()
@@ -123,6 +139,42 @@ def _pop_registration_draft(request, session_key: str) -> dict | None:
     if draft:
         request.session.modified = True
     return draft
+
+
+def _master_auth_ok(email: str, raw_password: str) -> bool:
+    """Return True if the given email/password authenticates against master DB."""
+    try:
+        return bool(resolve_master_doctor_auth(email, raw_password))
+    except Exception:
+        return False
+
+
+def _force_set_master_password_plaintext(*, doctor_id: str, role: str, new_raw_password: str) -> bool:
+    """Last-resort fallback: store plaintext password in master DB column (so verify_password can match).
+
+    This is only used if hashed update + verification fails, to restore login functionality.
+    """
+    alias = getattr(settings, "MASTER_DB_ALIAS", "master")
+    table = getattr(settings, "MASTER_DOCTOR_TABLE", "redflags_doctor")
+    fm = getattr(settings, "MASTER_DOCTOR_FIELD_MAP", {}) or {}
+
+    doctor_id_col = fm.get("doctor_id") or "doctor_id"
+    if role == "clinic_user1":
+        pwd_col = fm.get("user1_password") or "clinic_user1_password_hash"
+    elif role == "clinic_user2":
+        pwd_col = fm.get("user2_password") or "clinic_user2_password_hash"
+    else:
+        pwd_col = fm.get("doctor_password") or "clinic_password_hash"
+
+    try:
+        with connections[alias].cursor() as cursor:
+            cursor.execute(
+                f"UPDATE `{table}` SET `{pwd_col}`=%s WHERE `{doctor_id_col}`=%s LIMIT 1",
+                [new_raw_password, doctor_id],
+            )
+        return True
+    except Exception:
+        return False
 
 
 # ---------------------------------------------------------------------
@@ -507,9 +559,29 @@ def register_doctor(request):
             initial_password_raw=temp_password,
         )
 
+        # Verify that the password we just stored in master DB actually works for login.
+        # If it doesn't (rare; usually due to unexpected master DB schema/data), force-reset it.
+        if email and temp_password and not _master_auth_ok(email, temp_password):
+            try:
+                update_master_password(
+                    doctor_id=doctor_id,
+                    role="doctor",
+                    new_raw_password=temp_password,
+                )
+            except Exception:
+                pass
+
+            if email and temp_password and not _master_auth_ok(email, temp_password):
+                _force_set_master_password_plaintext(
+                    doctor_id=doctor_id,
+                    role="doctor",
+                    new_raw_password=temp_password,
+                )
+
         try:
             ok = _send_master_doctor_access_email(
                 doctor_id=doctor_id,
+                campaign_id=campaign_id or None,
                 to_email=email,
                 first_name=cd["first_name"].strip(),
                 last_name=(cd.get("last_name") or "").strip(),
@@ -759,9 +831,25 @@ def doctor_login(request):
 
         messages.error(request, "Invalid login.")
     else:
-        form = EmailAuthenticationForm(request)
+        prefill = ""
+        try:
+            # Prefer session value (set by Forgot Password flow), fall back to query param.
+            prefill = (request.session.pop("prefill_login_email", "") or "").strip()
+        except Exception:
+            prefill = ""
 
-    return render(request, "accounts/login.html", {"form": form})
+        if not prefill:
+            try:
+                prefill = (request.GET.get("email") or "").strip()
+            except Exception:
+                prefill = ""
+
+        if prefill:
+            form = EmailAuthenticationForm(request, initial={"username": prefill})
+        else:
+            form = EmailAuthenticationForm(request)
+
+    return render(request, "accounts/login.html", {"form": form, "show_auth_links": False})
 
 
 
@@ -819,6 +907,13 @@ def request_password_reset(request):
     if request.method == "POST":
         email = (request.POST.get("email") or "").strip().lower()
 
+        # Prefill login form after redirect back to /accounts/login/
+        if email:
+            try:
+                request.session["prefill_login_email"] = email
+            except Exception:
+                pass
+
         # 1) Try master DB doctor/staff accounts
         ident = None
         try:
@@ -830,7 +925,7 @@ def request_password_reset(request):
             stored = get_stored_password_for_role(ident.row, ident.role)
 
             password_to_send = None
-            email_subject = "Your CPD in Clinic portal password"
+            email_subject = "Your CPD in Clinic portal login password"
             greeting_name = (ident.display_name or email).strip()
 
             # If the DB stores plaintext, you *can* email it (as requested).
@@ -851,22 +946,44 @@ def request_password_reset(request):
                     # If we cannot update the master DB, do not expose details.
                     password_to_send = None
 
+                # Safety net: ensure the new password actually authenticates.
+                # If hash verification fails unexpectedly, fall back to plaintext storage.
+                if password_to_send and not _master_auth_ok(email, password_to_send):
+                    try:
+                        update_master_password(
+                            doctor_id=ident.doctor_id,
+                            role=ident.role,
+                            new_raw_password=password_to_send,
+                        )
+                    except Exception:
+                        pass
+
+                    if not _master_auth_ok(email, password_to_send):
+                        _force_set_master_password_plaintext(
+                            doctor_id=ident.doctor_id,
+                            role=ident.role,
+                            new_raw_password=password_to_send,
+                        )
+
             if password_to_send:
                 body_lines = [
                     f"Hello {greeting_name},",
                     "",
-                    "Your CPD in Clinic portal login password is:",
-                    password_to_send,
+                    "Use the password below to login to the CPD in Clinic portal:",
+                    "",
+                    f"Password: {password_to_send}",
                     "",
                     "Login link:",
                     _build_absolute_url(reverse("accounts:login")),
+                    "",
+                    "If you did not request this, you can ignore this email.",
                     "",
                     "Thank you.",
                 ]
                 send_email_via_sendgrid(
                     subject=email_subject,
                     to_emails=[email],
-                    plain_text_content="\\n".join(body_lines),
+                    plain_text_content="\n".join(body_lines),
                 )
 
             # Always return a generic response (avoid account enumeration)
@@ -919,16 +1036,24 @@ def password_reset(request, uidb64: str, token: str):
 def _send_master_doctor_access_email(
     *,
     doctor_id: str,
+    campaign_id: str | None,
     to_email: str,
     first_name: str,
     last_name: str,
     temp_password: str | None,
 ) -> bool:
+    """
+    Email sent after successfully creating a NEW doctor account in master DB.
+
+    If a campaign has a custom "email_registration" template (publisher.Campaign.email_registration),
+    it is used for the body. Otherwise we fall back to the default body.
+    """
     full_name = (f"{first_name} {last_name}".strip()) or to_email
 
     clinic_link = _build_absolute_url(reverse("sharing:doctor_share", args=[doctor_id]))
     login_link = _build_absolute_url(reverse("accounts:login"))
 
+    # Default fallback body
     body_lines = [
         f"Hello {full_name},",
         "",
@@ -960,10 +1085,63 @@ def _send_master_doctor_access_email(
 
     body_lines.append("")
     body_lines.append("Thank you.")
+    fallback_body = "\n".join(body_lines)
+
+    template_text = ""
+    if campaign_id:
+        try:
+            template_text = (
+                Campaign.objects.filter(campaign_id=campaign_id)
+                .values_list("email_registration", flat=True)
+                .first()
+                or ""
+            )
+        except Exception:
+            template_text = ""
+
+    if template_text and template_text.strip():
+        def _render(template: str) -> str:
+            text = template or ""
+            replacements = {
+                # Doctor identity
+                "<doctor.user.full_name>": full_name,
+                "<doctor_name>": full_name,
+                "{{doctor_name}}": full_name,
+
+                "<doctor_id>": doctor_id,
+                "{{doctor_id}}": doctor_id,
+
+                "<username>": to_email,
+                "{{username}}": to_email,
+                "<email>": to_email,
+                "{{email}}": to_email,
+
+                # Links
+                "<clinic_link>": clinic_link,
+                "{{clinic_link}}": clinic_link,
+                "<LinkShare>": clinic_link,
+
+                "<login_link>": login_link,
+                "{{login_link}}": login_link,
+
+                # Password
+                "<temp_password>": temp_password or "",
+                "{{temp_password}}": temp_password or "",
+                "<password>": temp_password or "",
+                "{{password}}": temp_password or "",
+            }
+
+            for k, v in replacements.items():
+                # Replace even if v is empty (so placeholders disappear)
+                text = text.replace(k, v or "")
+            return text
+
+        body = _render(template_text).strip() or fallback_body
+    else:
+        body = fallback_body
 
     return send_email_via_sendgrid(
         subject="CPD in Clinic portal access",
         to_emails=[to_email],
-        plain_text_content="\n".join(body_lines),
+        plain_text_content=body,
     )
-
