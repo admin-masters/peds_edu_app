@@ -11,8 +11,14 @@ from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
+from accounts.forms import (
+    DoctorRegistrationForm,
+    DoctorClinicDetailsForm,
+    EmailAuthenticationForm,
+    DoctorSetPasswordForm,
+)
 
-from .forms import DoctorRegistrationForm, DoctorClinicDetailsForm, EmailAuthenticationForm, DoctorSetPasswordForm
+# from .forms import DoctorRegistrationForm, DoctorClinicDetailsForm, EmailAuthenticationForm, DoctorSetPasswordForm
 from .pincode_directory import IndiaPincodeDirectoryNotReady, get_state_and_district_for_pincode, get_state_for_pincode
 
 from publisher.models import Campaign
