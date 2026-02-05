@@ -21,6 +21,67 @@ from peds_edu.master_db import (
 
 from .services import build_whatsapp_message_prefixes, get_catalog_json_cached
 
+# ---------------------------------------------------------------------
+# Patient page UI strings (minimal inline translations for label text)
+# ---------------------------------------------------------------------
+# We keep this local (instead of full Django i18n) to avoid touching global settings.
+_PATIENT_UI_STRINGS = {
+    "en": {
+        "clinic_phone": "Clinic phone:",
+        "whatsapp": "WhatsApp:",
+        "educational_content": "Educational content provided by PE {clinic_name}",
+    },
+    "hi": {
+        "clinic_phone": "क्लिनिक फ़ोन:",
+        "whatsapp": "व्हाट्सएप:",
+        "educational_content": "PE {clinic_name} द्वारा प्रदत्त शैक्षिक सामग्री",
+    },
+    "mr": {
+        "clinic_phone": "क्लिनिक फोन:",
+        "whatsapp": "व्हॉट्सअॅप:",
+        "educational_content": "PE {clinic_name} कडून दिलेली शैक्षणिक सामग्री",
+    },
+    "te": {
+        "clinic_phone": "క్లినిక్ ఫోన్:",
+        "whatsapp": "వాట్సాప్:",
+        "educational_content": "PE {clinic_name} అందించిన విద్యా సమాచారం",
+    },
+    "ml": {
+        "clinic_phone": "ക്ലിനിക് ഫോൺ:",
+        "whatsapp": "വാട്‌സ്ആപ്പ്:",
+        "educational_content": "PE {clinic_name} നൽകുന്ന വിദ്യാഭ്യാസ ഉള്ളടക്കം",
+    },
+    "kn": {
+        "clinic_phone": "ಕ್ಲಿನಿಕ್ ಫೋನ್:",
+        "whatsapp": "ವಾಟ್ಸಾಪ್:",
+        "educational_content": "PE {clinic_name} ನೀಡಿದ ಶಿಕ್ಷಣ ವಿಷಯ",
+    },
+    "ta": {
+        "clinic_phone": "கிளினிக் தொலைபேசி:",
+        "whatsapp": "வாட்ஸ்அப்:",
+        "educational_content": "PE {clinic_name} வழங்கும் கல்வி உள்ளடக்கம்",
+    },
+    "bn": {
+        "clinic_phone": "ক্লিনিক ফোন:",
+        "whatsapp": "হোয়াটসঅ্যাপ:",
+        "educational_content": "PE {clinic_name} প্রদানিত শিক্ষামূলক বিষয়বস্তু",
+    },
+}
+
+
+def _patient_ui_strings(lang_code: str, *, clinic_name: str) -> dict[str, str]:
+    base = _PATIENT_UI_STRINGS.get(lang_code) or _PATIENT_UI_STRINGS["en"]
+    try:
+        edu = (base.get("educational_content") or "").format(clinic_name=clinic_name or "")
+    except Exception:
+        edu = (base.get("educational_content") or "").replace("{clinic_name}", clinic_name or "")
+
+    return {
+        "clinic_phone": base.get("clinic_phone") or _PATIENT_UI_STRINGS["en"]["clinic_phone"],
+        "whatsapp": base.get("whatsapp") or _PATIENT_UI_STRINGS["en"]["whatsapp"],
+        "educational_content": edu,
+    }
+
 
 # -----------------------
 # Required by sharing/urls.py
@@ -202,6 +263,7 @@ def patient_video(request: HttpRequest, doctor_id: str, video_code: str) -> Http
     lang = request.GET.get("lang", "en")
     if lang not in LANGUAGE_CODES:
         lang = "en"
+    ui = _patient_ui_strings(lang, clinic_name=str(clinic.get("display_name") or ""))
 
     video = get_object_or_404(Video, code=video_code)
     vlang = (
@@ -218,6 +280,7 @@ def patient_video(request: HttpRequest, doctor_id: str, video_code: str) -> Http
             "video": video,
             "vlang": vlang,
             "selected_lang": lang,
+            "ui": ui,
             "languages": LANGUAGES,
             "show_auth_links": False,
         },
@@ -247,6 +310,7 @@ def patient_cluster(request: HttpRequest, doctor_id: str, cluster_code: str) -> 
     lang = request.GET.get("lang", "en")
     if lang not in LANGUAGE_CODES:
         lang = "en"
+    ui = _patient_ui_strings(lang, clinic_name=str(clinic.get("display_name") or ""))
 
     cluster = VideoCluster.objects.filter(code=cluster_code).first()
     if cluster is None and cluster_code.isdigit():
@@ -290,6 +354,8 @@ def patient_cluster(request: HttpRequest, doctor_id: str, cluster_code: str) -> 
             "items": items,
             "languages": LANGUAGES,
             "selected_lang": lang,
+            "ui": ui,
             "show_auth_links": False,
         },
     )
+
