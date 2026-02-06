@@ -1,6 +1,4 @@
-# Online Python compiler (interpreter) to run Python online.
-# Write Python 3 code in this online editor and run it.
-print("Try programiz.pro")from __future__ import annotations
+from __future__ import annotations
 import json
 from typing import Any, Dict, List, Set
 from urllib.parse import urlencode
