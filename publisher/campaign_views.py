@@ -386,6 +386,8 @@ def field_rep_landing_page(request: HttpRequest) -> HttpResponse:
     try:
         # Prefer normalized campaign id (no hyphens)
         campaign = master_db.get_campaign(campaign_id_db) or master_db.get_campaign(campaign_id)
+        local_campaign = Campaign.objects.filter(campaign_id=campaign_id).first()
+
         _plog(
             "field_rep_landing.campaign.lookup",
             found=bool(campaign),
@@ -631,22 +633,26 @@ def field_rep_landing_page(request: HttpRequest) -> HttpResponse:
         ).strip()
 
         # Render WhatsApp message STRICTLY from campaign template
+        wa_template = ""
+        if local_campaign and local_campaign.wa_addition:
+            wa_template = local_campaign.wa_addition
+
         wa_message = _render_campaign_text_template(
-            campaign.wa_addition or "",
+            wa_template,
             doctor_name=(doctor.full_name or "Doctor").strip(),
             clinic_link=clinic_link,
             setup_link=f"{base_url}/accounts/login/",
         ).strip()
+
         
         # Absolute fallback only if template is empty
         if not wa_message:
-            wa_message = (
-                "Hi {{doctor_name}},\n\n"
-                "Clinic Link:\n"
-                "{{clinic_link}}\n\n"
-                "Password Set/Reset:\n"
-                "{{setup_link}}"
-            )
+          wa_message = (
+              f"Hi {doctor.full_name or 'Doctor'},\n\n"
+              f"Clinic Link:\n{clinic_link}\n\n"
+              f"Password Set/Reset:\n{base_url}/accounts/login/"
+          )
+
 
         
         whatsapp_url = master_db.build_whatsapp_deeplink(
