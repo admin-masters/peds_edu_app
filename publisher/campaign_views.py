@@ -95,6 +95,37 @@ class FieldRepWhatsAppForm(forms.Form):
     )
 
 
+def _jwt_b64url_decode(seg: str) -> bytes:
+    import base64
+    s = seg.encode("utf-8")
+    s += b"=" * ((4 - (len(s) % 4)) % 4)
+    return base64.urlsafe_b64decode(s)
+
+def _decode_and_verify_hs256(token: str, secret: str) -> dict:
+    """
+    Minimal HS256 JWT verifier (no external deps).
+    Returns payload dict on success; raises ValueError on failure.
+    """
+    import hmac, hashlib, json as _json
+    parts = (token or "").split(".")
+    if len(parts) != 3:
+        raise ValueError("token_not_3_parts")
+
+    header_b64, payload_b64, sig_b64 = parts
+    signing_input = (header_b64 + "." + payload_b64).encode("utf-8")
+    sig = _jwt_b64url_decode(sig_b64)
+
+    mac = hmac.new((secret or "").encode("utf-8"), signing_input, hashlib.sha256).digest()
+    if not hmac.compare_digest(mac, sig):
+        raise ValueError("signature_mismatch")
+
+    payload_raw = _jwt_b64url_decode(payload_b64)
+    obj = _json.loads(payload_raw.decode("utf-8"))
+    if not isinstance(obj, dict):
+        raise ValueError("payload_not_object")
+    return obj
+
+
 def _render_campaign_text_template(
     template: str,
     *,
@@ -287,6 +318,23 @@ def field_rep_landing_page(request: HttpRequest) -> HttpResponse:
 
     # Candidates to try (URL param, plus SSO sub if present)
     lookup_candidates: List[str] = [field_rep_id_raw]
+    # Also try to resolve field rep from JWT token if present (important when session is empty)
+    token = (request.GET.get("token") or "").strip()
+    if token:
+        try:
+            secret = getattr(settings, "SSO_SHARED_SECRET", "") or getattr(settings, "PUBLISHER_SSO_SHARED_SECRET", "")
+            claims = _decode_and_verify_hs256(token, secret)
+            sub = str(claims.get("sub") or "").strip()   # e.g. "fieldrep_16"
+            if sub and sub not in lookup_candidates:
+                lookup_candidates.append(sub)
+    
+            m = re.search(r"(\d+)$", sub)
+            if m and m.group(1) not in lookup_candidates:
+                lookup_candidates.append(m.group(1))
+        except Exception as e:
+            # keep working; debug output will show this
+            _plog("field_rep_landing.token_decode_error", error=str(e))
+
 
     session_key = getattr(settings, "SSO_SESSION_KEY_IDENTITY", "sso_identity")
     ident = request.session.get(session_key)
