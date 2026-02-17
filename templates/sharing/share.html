@@ -5,6 +5,23 @@
 {% block head %}
 <style>
   /* Enhanced sharing interface */
+  :root {
+    --bg: #0f172a;
+    --surface: #1e293b;
+    --surface-2: #334155;
+    --text: #ffffff;
+    --muted: #e2e8f0;
+    --border: #475569;
+    --primary: #3b82f6;
+    --primary-contrast: #ffffff;
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1);
+    --radius-sm: 0.375rem;
+    --radius-md: 0.5rem;
+    --radius-lg: 0.75rem;
+  }
+
   .profile-row {
     display: flex;
     align-items: center;
@@ -52,6 +69,7 @@
   .avatar-letter {
     line-height: 1;
     text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    color: #ffffff;
   }
 
   .profile-info {
@@ -63,13 +81,14 @@
     font-size: 1.5rem;
     font-weight: 800;
     margin-bottom: 4px;
-    color: var(--text);
+    color: #ffffff;
   }
 
   .profile-subtitle {
-    color: var(--muted);
+    color: #ffffff;
     margin-bottom: 8px;
     font-size: 0.9375rem;
+    opacity: 0.9;
   }
 
   .kv-grid {
@@ -91,21 +110,21 @@
 
   .kv-label {
     font-weight: 600;
-    color: var(--text);
+    color: #ffffff;
     min-width: 140px;
     font-size: 0.875rem;
   }
 
   .kv-value {
-    
     flex: 1;
     font-size: 0.9375rem;
+    color: #ffffff;
   }
 
   .section-title {
     font-size: 1.25rem;
     margin: 0 0 20px 0;
-    color: var(--text);
+    color: #ffffff;
     position: relative;
     padding-bottom: 12px;
   }
@@ -151,10 +170,17 @@
     width: 100%;
     box-sizing: border-box;
     padding-left: 44px;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'%3E%3C/circle%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'%3E%3C/line%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%23e2e8f0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'%3E%3C/circle%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'%3E%3C/line%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: left 12px center;
     background-size: 20px;
+    color: #ffffff;
+    background-color: var(--surface-2);
+  }
+
+  .search-wrapper input::placeholder {
+    color: #e2e8f0;
+    opacity: 0.7;
   }
 
   /* Toolbar: now search-only, always full width */
@@ -214,7 +240,7 @@
 
   .video-title {
     font-weight: 600;
-    color: var(--text);
+    color: #ffffff;
     flex: 1;
     font-size: 0.9375rem;
   }
@@ -227,20 +253,21 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--primary);
+    color: #ffffff;
     flex-shrink: 0;
   }
 
   .empty-state {
     text-align: center;
     padding: 48px 20px;
-    color: var(--muted);
+    color: #ffffff;
   }
 
   .empty-state-icon {
     font-size: 48px;
     margin-bottom: 16px;
     opacity: 0.5;
+    color: #ffffff;
   }
 
   /* Share Actions */
@@ -259,19 +286,27 @@
 
   .input-group input {
     padding-left: 48px;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z'%3E%3C/path%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%23e2e8f0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z'%3E%3C/path%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: left 12px center;
     background-size: 20px;
+    color: #ffffff;
+    background-color: var(--surface);
+  }
+
+  .input-group input::placeholder {
+    color: #e2e8f0;
+    opacity: 0.7;
   }
 
   .hint {
-    color: var(--muted);
+    color: #ffffff;
     font-size: 0.8125rem;
     margin-top: 6px;
     display: flex;
     align-items: center;
     gap: 6px;
+    opacity: 0.9;
   }
 
   .hint:before {
@@ -286,6 +321,7 @@
     margin: 16px 0;
     border-left: 4px solid var(--primary);
     font-size: 0.875rem;
+    color: #ffffff;
   }
 
   .actions-grid {
@@ -325,19 +361,20 @@
   .action-icon {
     font-size: 32px;
     margin-bottom: 12px;
-    color: var(--primary);
+    color: #ffffff;
   }
 
   .action-title {
     font-weight: 600;
     margin-bottom: 8px;
-    color: var(--text);
+    color: #ffffff;
   }
 
   .action-description {
-    color: var(--muted);
+    color: #ffffff;
     font-size: 0.8125rem;
     line-height: 1.4;
+    opacity: 0.9;
   }
 
   .prominent-footer {
@@ -346,7 +383,8 @@
     border-top: 1px solid var(--border);
     text-align: center;
   }
-    /* --- Campaign support acknowledgements & banners (system_pe) --- */
+
+  /* --- Campaign support acknowledgements & banners (system_pe) --- */
   .campaign-support {
     margin-top: 28px;
     padding-top: 20px;
@@ -354,7 +392,7 @@
   }
 
   .campaign-support .ack-line {
-    color: var(--muted);
+    color: #ffffff;
     font-size: 0.9rem;
     margin: 6px 0;
     line-height: 1.35;
@@ -388,7 +426,8 @@
     height: auto;
     display: block;
   }
-    /* If banner has no link, keep it visible but non-clickable */
+
+  /* If banner has no link, keep it visible but non-clickable */
   .campaign-support .banner-link.banner-static {
     cursor: default;
   }
@@ -397,7 +436,6 @@
     box-shadow: none;
     transform: none;
   }
-
 
   /* Mobile Optimizations */
   @media (max-width: 640px) {
@@ -422,6 +460,7 @@
     .kv-label {
       min-width: auto;
       font-size: 0.8125rem;
+      color: #ffffff;
     }
 
     .section-title {
@@ -429,14 +468,14 @@
     }
   }
 
-  /* Dark mode support */
+  /* Dark mode support - overridden for white text */
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #0f172a;
       --surface: #1e293b;
       --surface-2: #334155;
-      --text: #f1f5f9;
-      --muted: #94a3b8;
+      --text: #ffffff;
+      --muted: #e2e8f0;
       --border: #475569;
     }
 
@@ -472,14 +511,15 @@
 
   .bundle-title {
     font-weight: 700;
-    color: var(--text);
+    color: #ffffff;
     line-height: 1.2;
   }
 
   .bundle-meta {
     font-size: 0.8rem;
-    color: var(--muted);
+    color: #ffffff;
     margin-top: 4px;
+    opacity: 0.9;
   }
 
   .bundle-actions {
@@ -520,6 +560,81 @@
     padding: 8px 12px;
     font-size: 0.85rem;
     white-space: nowrap;
+  }
+
+  /* Form elements styling */
+  select, input {
+    background-color: var(--surface-2);
+    color: #ffffff;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 8px 12px;
+    width: 100%;
+  }
+
+  select option {
+    background-color: var(--surface);
+    color: #ffffff;
+  }
+
+  label {
+    color: #ffffff;
+    font-weight: 500;
+    margin-bottom: 4px;
+    display: block;
+  }
+
+  .btn {
+    background-color: var(--primary);
+    color: #ffffff;
+    border: none;
+    border-radius: var(--radius-sm);
+    padding: 10px 16px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.2s ease;
+  }
+
+  .btn:hover {
+    background-color: #2563eb;
+  }
+
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .btn-secondary {
+    background-color: var(--surface-2);
+    border: 1px solid var(--border);
+    color: #ffffff;
+  }
+
+  .btn-secondary:hover {
+    background-color: var(--surface);
+  }
+
+  .muted {
+    color: #ffffff;
+    opacity: 0.9;
+  }
+
+  strong {
+    color: #ffffff;
+  }
+
+  /* Card styling */
+  .card {
+    background: var(--surface);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    margin-bottom: 24px;
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-md);
+  }
+
+  h4 {
+    color: #ffffff;
   }
 </style>
 {% endblock %}
