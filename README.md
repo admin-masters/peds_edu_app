@@ -1,4 +1,4 @@
-# Pediatric Patient Education System - New Microsite  (Django + MySQL)
+# Pediatric Patient Education System - New Microsite  (Django + MySQL)1
 
 This repository contains a working Django application implementing:
 - Doctor registration + clinic whitelabel link delivery (on-screen + email via SendGrid)
