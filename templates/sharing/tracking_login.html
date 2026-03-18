@@ -6,8 +6,9 @@
 <div class="card" style="max-width: 460px; margin: 32px auto;">
   <h2 style="margin-bottom: 12px;">Restricted Access</h2>
   <p class="muted" style="margin-bottom: 20px;">
-    This dashboard is limited to the dedicated tracking viewer account.
-  </p>
+  This dashboard is limited to a superuser account.
+</p>
+
 
   {% if messages %}
     {% for message in messages %}
@@ -22,7 +23,8 @@
     <div style="display: grid; gap: 16px;">
       <div>
         <label for="email">Email</label>
-        <input id="email" name="email" type="email" value="{{ allowed_email }}" autocomplete="username" required>
+       <input id="email" name="email" type="email" autocomplete="username" required>
+
       </div>
       <div>
         <label for="password">Password</label>
