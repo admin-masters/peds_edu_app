@@ -914,6 +914,7 @@
 
 <script>
 const catalog = JSON.parse(document.getElementById("catalog-json").textContent);
+const createShareActivityUrl = "{% url 'sharing:create_share_activity' %}";
 
 const therapySel = document.getElementById("therapySel");
 const triggerSel = document.getElementById("triggerSel");
@@ -1465,30 +1466,100 @@ function buildMessage(title, link, lang) {
   return msg;
 }
 
+function getCookie(name) {
+  const cookieValue = document.cookie
+    .split(";")
+    .map(part => part.trim())
+    .find(part => part.startsWith(`${name}=`));
+  if (!cookieValue) return "";
+  return decodeURIComponent(cookieValue.split("=").slice(1).join("="));
+}
+
+function generateSharePublicId() {
+  if (window.crypto && typeof window.crypto.randomUUID === "function") {
+    return window.crypto.randomUUID();
+  }
+
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (ch) {
+    const rand = Math.random() * 16 | 0;
+    const value = ch === "x" ? rand : ((rand & 0x3) | 0x8);
+    return value.toString(16);
+  });
+}
+
+function buildPatientLink(kind, itemCode, lang, sharePublicId) {
+  const basePath = kind === "video"
+    ? `/p/${catalog.doctor_id}/v/${itemCode}/`
+    : `/p/${catalog.doctor_id}/c/${itemCode}/`;
+  const url = new URL(basePath, window.location.origin);
+  url.searchParams.set("lang", lang);
+  if (catalog.doctor_payload) {
+    url.searchParams.set("d", catalog.doctor_payload);
+  }
+  if (sharePublicId) {
+    url.searchParams.set("s", sharePublicId);
+  }
+  return url.toString();
+}
+
 function shareToWhatsApp(message) {
   const num = (waNumber.value || "").trim();
   if (!/^\d{10}$/.test(num)) return;
   window.open(`https://wa.me/91${num}?text=${encodeURIComponent(message)}`);
 }
 
+function queueShareActivity(payload) {
+  const csrfToken = getCookie("csrftoken");
+  if (!window.fetch || !csrfToken) return;
+
+  fetch(createShareActivityUrl, {
+    method: "POST",
+    credentials: "same-origin",
+    keepalive: true,
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRFToken": csrfToken,
+    },
+    body: JSON.stringify(payload),
+  }).catch(() => {});
+}
+
 // -------------------- actions --------------------
 shareVideoBtn.onclick = () => {
   if (!activeVideo) return;
   const lang = langSel.value;
+  const recipientIdentifier = (waNumber.value || "").trim();
+  if (!/^\d{10}$/.test(recipientIdentifier)) return;
   const title = videoTitle(activeVideo, lang) || activeVideo.id;
-  const payload = catalog.doctor_payload ? `&d=${encodeURIComponent(catalog.doctor_payload)}` : "";
-  const link = `${location.origin}/p/${catalog.doctor_id}/v/${activeVideo.id}/?lang=${lang}${payload}`;
+  const sharePublicId = generateSharePublicId();
+  const link = buildPatientLink("video", activeVideo.id, lang, sharePublicId);
   shareToWhatsApp(buildMessage(title, link, lang));
+  queueShareActivity({
+    share_public_id: sharePublicId,
+    shared_item_type: "video",
+    shared_item_code: activeVideo.id,
+    language_code: lang,
+    recipient_identifier: recipientIdentifier,
+  });
 };
 
 shareBundleBtn.onclick = () => {
   const bundle = getSelectedBundle();
   if (!bundle) return;
   const lang = langSel.value;
+  const recipientIdentifier = (waNumber.value || "").trim();
+  if (!/^\d{10}$/.test(recipientIdentifier)) return;
   const title = bundleLabelByCode(bundle, lang) || bundle;
-  const payload = catalog.doctor_payload ? `&d=${encodeURIComponent(catalog.doctor_payload)}` : "";
-  const link = `${location.origin}/p/${catalog.doctor_id}/c/${bundle}/?lang=${lang}${payload}`;
+  const sharePublicId = generateSharePublicId();
+  const link = buildPatientLink("cluster", bundle, lang, sharePublicId);
   shareToWhatsApp(buildMessage(title, link, lang));
+  queueShareActivity({
+    share_public_id: sharePublicId,
+    shared_item_type: "cluster",
+    shared_item_code: bundle,
+    language_code: lang,
+    recipient_identifier: recipientIdentifier,
+  });
 };
 
 // -------------------- event wiring --------------------

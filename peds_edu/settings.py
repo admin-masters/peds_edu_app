@@ -164,6 +164,7 @@ MEDIA_URL = env("MEDIA_URL", "/media/")
 MEDIA_ROOT = Path(env("MEDIA_ROOT", "/home/ubuntu/patient-portal-media")).resolve()
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+TRACKING_AUDIT_USER_EMAIL = env("TRACKING_AUDIT_USER_EMAIL", "").strip().lower()
 
 # ---------------- SESSIONS ----------------
 SESSION_COOKIE_AGE = int(env("SESSION_COOKIE_AGE_SECONDS", str(60 * 60 * 24 * 90)))
