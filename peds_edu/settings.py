@@ -86,10 +86,10 @@ WSGI_APPLICATION = "peds_edu.wsgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.mysql",  # Force MySQL
-        "NAME": env("DB_NAME", "peds_edu"),
-        "USER": env("DB_USER", "peds_edu"),
-        "PASSWORD": env("DB_PASSWORD", "Bv9ALOgzFszxDYso"),
-        "HOST": env("DB_HOST", "35.154.221.92"),
+        "NAME": env("DB_NAME", "patient_portal_local"),
+        "USER": env("DB_USER", "root_patient_portal"),
+        "PASSWORD": env("DB_PASSWORD", "Kad78RaaU%W^S%$1"),
+        "HOST": env("DB_HOST", "65.0.143.171"),
         "PORT": env("DB_PORT", "3306"),
         "OPTIONS": {"charset": "utf8mb4"},
     }
