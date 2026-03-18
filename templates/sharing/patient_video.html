@@ -71,6 +71,12 @@
       <div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; border-radius: 16px; border: 1px solid var(--border); background: #000; box-shadow: var(--shadow-md);">
         <iframe id="yt-player"
                 data-youtube-url="{{ vlang.youtube_url }}"
+                data-share-public-id="{{ share_public_id }}"
+                data-video-code="{{ video.code }}"
+                data-video-title="{{ vlang.title|default:video.code }}"
+                data-doctor-id="{{ doctor.doctor_id }}"
+                data-doctor-name="{{ doctor.user.full_name }}"
+                data-clinic-name="{{ clinic.display_name }}"
                 referrerpolicy="strict-origin-when-cross-origin"
                 loading="lazy"
                 style="position: absolute; top:0; left:0; width:100%; height:100%; border:0;"
@@ -108,6 +114,7 @@
   const iframe = document.getElementById("yt-player");
   const fallback = document.getElementById("yt-fallback");
   if (!iframe) return;
+  const playbackEventUrl = "{% url 'sharing:log_playback_event' %}";
 
   const rawUrl = iframe.dataset.youtubeUrl || "";
   const match = rawUrl.match(
@@ -129,6 +136,7 @@
       disablekb: "1",
       controls: "1",
       fs: "1",
+      enablejsapi: "1",
       origin: window.location.origin
     });
 
@@ -140,6 +148,121 @@
     });
   }
 
+  function getCookie(name) {
+    const cookieValue = document.cookie
+      .split(";")
+      .map(part => part.trim())
+      .find(part => part.startsWith(`${name}=`));
+    if (!cookieValue) return "";
+    return decodeURIComponent(cookieValue.split("=").slice(1).join("="));
+  }
+
+  function postPlaybackEvent(body) {
+    const csrfToken = getCookie("csrftoken");
+    if (!window.fetch || !csrfToken) return;
+
+    fetch(playbackEventUrl, {
+      method: "POST",
+      credentials: "same-origin",
+      keepalive: true,
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": csrfToken,
+      },
+      body: JSON.stringify(body),
+    }).catch(() => {});
+  }
+
+  function trackVideoPlayback() {
+    if (iframe.dataset.playerInitialized === "1") return;
+    if (!window.YT || !window.YT.Player || !match) return;
+    iframe.dataset.playerInitialized = "1";
+
+    const firedMilestones = new Set();
+    let playLogged = false;
+    let progressTimer = null;
+
+    function stopProgressTimer() {
+      if (progressTimer) {
+        window.clearInterval(progressTimer);
+        progressTimer = null;
+      }
+    }
+
+    function sendEvent(eventType, milestonePercent) {
+      postPlaybackEvent({
+        share_public_id: iframe.dataset.sharePublicId || "",
+        doctor_id: iframe.dataset.doctorId || "",
+        doctor_name: iframe.dataset.doctorName || "",
+        clinic_name: iframe.dataset.clinicName || "",
+        page_item_type: "video",
+        event_type: eventType,
+        video_code: iframe.dataset.videoCode || "",
+        video_name: iframe.dataset.videoTitle || "",
+        milestone_percent: milestonePercent == null ? null : milestonePercent,
+      });
+    }
+
+    function maybeTrackProgress(player) {
+      const duration = typeof player.getDuration === "function" ? player.getDuration() : 0;
+      const currentTime = typeof player.getCurrentTime === "function" ? player.getCurrentTime() : 0;
+      if (!duration || duration <= 0) return;
+
+      const percent = Math.floor((currentTime / duration) * 100);
+      [25, 50, 75, 100].forEach((milestone) => {
+        if (percent >= milestone && !firedMilestones.has(milestone)) {
+          firedMilestones.add(milestone);
+          sendEvent("progress", milestone);
+        }
+      });
+    }
+
+    const player = new window.YT.Player(iframe.id, {
+      events: {
+        onStateChange: function (event) {
+          if (event.data === window.YT.PlayerState.PLAYING) {
+            if (!playLogged) {
+              playLogged = true;
+              sendEvent("play", null);
+            }
+            stopProgressTimer();
+            progressTimer = window.setInterval(function () {
+              maybeTrackProgress(player);
+            }, 1000);
+            return;
+          }
+
+          if (
+            event.data === window.YT.PlayerState.PAUSED ||
+            event.data === window.YT.PlayerState.ENDED ||
+            event.data === window.YT.PlayerState.BUFFERING
+          ) {
+            maybeTrackProgress(player);
+            stopProgressTimer();
+          }
+        },
+      },
+    });
+  }
+
+  if (match) {
+    if (window.YT && window.YT.Player) {
+      trackVideoPlayback();
+    } else {
+      const script = document.createElement("script");
+      script.src = "https://www.youtube.com/iframe_api";
+      document.head.appendChild(script);
+
+      const previousReady = window.onYouTubeIframeAPIReady;
+      window.onYouTubeIframeAPIReady = function () {
+        if (typeof previousReady === "function") {
+          previousReady();
+        }
+        trackVideoPlayback();
+      };
+    }
+  }
+
   document.getElementById("lang").addEventListener("change", function () {
     const url = new URL(window.location.href);
     url.searchParams.set("lang", this.value);
@@ -148,4 +271,3 @@
 })();
 </script>
 {% endblock %}
-
