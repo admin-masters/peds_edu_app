@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 from .aws_secrets import get_secret_string  # Optional fallback for secrets
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-load_dotenv(BASE_DIR / ".env")
+load_dotenv("/var/www/secrets/.env")
 
 CSRF_TRUSTED_ORIGINS = [
     'http://portal.cpdinclinic.co.in',
