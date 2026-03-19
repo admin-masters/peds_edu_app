@@ -94,7 +94,6 @@ DATABASES = {
     }
 }
 
-Patient Portal (Live) RDS
 
 # ---------------------------------------------------------------------
 # MASTER FORMS DB (Project1 master DB) - new-forms-rds
