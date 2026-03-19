@@ -85,14 +85,16 @@ WSGI_APPLICATION = "peds_edu.wsgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.mysql",  # Force MySQL
-        "NAME": "patient_portal_local",
-        "USER": "django_root",
+        "NAME": "patient_portal_live",
+        "USER": "patient_portal_root",
         "PASSWORD": "R$KG5yIaHZH8B",
         "HOST": "localhost",
         "PORT": "3306",
         "OPTIONS": {"charset": "utf8mb4"},
     }
 }
+
+Patient Portal (Live) RDS
 
 # ---------------------------------------------------------------------
 # MASTER FORMS DB (Project1 master DB) - new-forms-rds
