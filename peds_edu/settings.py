@@ -327,7 +327,7 @@ MASTER_DB_CAMPAIGN_ID_COLUMN = os.getenv("MASTER_DB_CAMPAIGN_ID_COLUMN", "campai
 MASTER_DB_CAMPAIGN_DOCTORS_SUPPORTED_COLUMN = os.getenv("MASTER_DB_CAMPAIGN_DOCTORS_SUPPORTED_COLUMN", "doctors_supported").strip()
 MASTER_DB_CAMPAIGN_WA_ADDITION_COLUMN = os.getenv("MASTER_DB_CAMPAIGN_WA_ADDITION_COLUMN", "wa_addition").strip()
 MASTER_DB_CAMPAIGN_VIDEO_CLUSTER_COLUMN = os.getenv("MASTER_DB_CAMPAIGN_VIDEO_CLUSTER_COLUMN", "new_video_cluster_name").strip()
-MASTER_DB_CAMPAIGN_EMAIL_REGISTRATION_COLUMN = os.getenv("MASTER_DB_CAMPAIGN_EMAIL_REGISTRATION_COLUMN", "email_registration").strip()
+MASTER_DB_CAMPAIGN_EMAIL_REGISTRATION_COLUMN = os.getenv("MASTER_DB_CAMPAIGN_EMAIL_REGISTRATION_COLUMN", "recruitment_mail_format").strip()
 
 # Public base URL used for absolute links
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://portal.cpdinclinic.co.in").rstrip("/")
@@ -376,7 +376,7 @@ MASTER_DB_CAMPAIGN_ID_COLUMN = "id"
 MASTER_DB_CAMPAIGN_DOCTORS_SUPPORTED_COLUMN = "num_doctors_supported"
 MASTER_DB_CAMPAIGN_WA_ADDITION_COLUMN = "add_to_campaign_message"   # used as wa_addition in Project2 flow
 MASTER_DB_CAMPAIGN_VIDEO_CLUSTER_COLUMN = "name"                    # used as new_video_cluster_name in Project2 flow
-MASTER_DB_CAMPAIGN_EMAIL_REGISTRATION_COLUMN = "register_message"   # used as email_registration in Project2 flow
+MASTER_DB_CAMPAIGN_EMAIL_REGISTRATION_COLUMN = "recruitment_mail_format"   # used as email_registration in Project2 flow
 
 PUBLIC_BASE_URL = "https://portal.cpdinclinic.co.in"
 
