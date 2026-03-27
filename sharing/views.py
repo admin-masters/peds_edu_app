@@ -170,6 +170,24 @@ def _resolve_shared_item_details(*, shared_item_type: str, shared_item_code: str
     )
     return cluster.code, (clang.name if clang and clang.name else cluster.display_name or cluster.code)
 
+def _effective_logged_in_doctor_id(request: HttpRequest) -> str:
+    session_doctor_id = str(request.session.get("master_doctor_id") or "").strip()
+    if session_doctor_id:
+        return session_doctor_id
+
+    profile_doctor_id = ""
+    try:
+        profile_doctor_id = str(request.user.doctor_profile.doctor_id or "").strip()
+    except Exception:
+        profile_doctor_id = ""
+
+    if profile_doctor_id:
+        request.session["master_doctor_id"] = profile_doctor_id
+        request.session["master_login_email"] = getattr(request.user, "email", "") or ""
+        request.session["master_login_role"] = "doctor"
+
+    return profile_doctor_id
+
 
 # def _tracking_audit_user_email() -> str:
 #     return str(getattr(settings, "TRACKING_AUDIT_USER_EMAIL", "") or "").strip().lower()
@@ -240,18 +258,10 @@ def _fetch_allowed_bundle_codes_for_campaigns(campaign_ids: list[str]) -> set[st
 @ensure_csrf_cookie
 @login_required
 def doctor_share(request: HttpRequest, doctor_id: str) -> HttpResponse:
-    session_doctor_id = str(request.session.get("master_doctor_id") or "").strip()
-
-    profile_doctor_id = ""
-    try:
-        profile_doctor_id = str(request.user.doctor_profile.doctor_id or "").strip()
-    except Exception:
-        profile_doctor_id = ""
-
-    effective_doctor_id = session_doctor_id or profile_doctor_id
-
+    effective_doctor_id = _effective_logged_in_doctor_id(request)
     if not effective_doctor_id or effective_doctor_id != doctor_id:
         return HttpResponseForbidden("Not allowed")
+
 
     if not session_doctor_id and profile_doctor_id == doctor_id:
         request.session["master_doctor_id"] = doctor_id
@@ -490,9 +500,10 @@ def patient_cluster(request: HttpRequest, doctor_id: str, cluster_code: str) -> 
 @login_required
 @require_POST
 def create_share_activity(request: HttpRequest) -> HttpResponse:
-    doctor_id = str(request.session.get("master_doctor_id") or "").strip()
+    doctor_id = _effective_logged_in_doctor_id(request)
     if not doctor_id:
         return HttpResponseForbidden("Not allowed")
+
 
     payload = _parse_json_body(request)
     share_public_id = _parse_uuid(payload.get("share_public_id"))
