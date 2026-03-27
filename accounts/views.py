@@ -808,13 +808,13 @@ def doctor_login(request):
     """
     Doctor/clinic-staff login:
       1) First tries master DB (MASTER_DB_ALIAS.redflags_doctor).
-      2) If not matched, falls back to existing portal auth (publisher/staff users).
+      2) If not matched, falls back to existing portal auth (publisher/staff/users with doctor_profile).
     """
     if request.method == "POST":
-        # Try master DB auth first
-        email = (request.POST.get("username") or "").strip().lower()  # AuthenticationForm uses "username"
+        email = (request.POST.get("username") or "").strip().lower()
         raw_password = (request.POST.get("password") or "").strip()
 
+        # 1) Try master DB auth first
         if email and raw_password:
             try:
                 master_auth = resolve_master_doctor_auth(email, raw_password)
@@ -822,46 +822,42 @@ def doctor_login(request):
                 master_auth = None
 
             if master_auth:
-                # Ensure a local Django user exists for session/login_required
                 user, created = User.objects.get_or_create(
                     email=master_auth.login_email,
                     defaults={"full_name": master_auth.display_name},
                 )
-                # Keep header name reasonably updated
+
                 if not created and (user.full_name or "").strip() != (master_auth.display_name or "").strip():
                     user.full_name = master_auth.display_name
                     user.save(update_fields=["full_name"])
 
-                # Log in (manual backend; user may have unusable password locally)
                 login(request, user, backend="django.contrib.auth.backends.ModelBackend")
 
-                # Store doctor_id in session for authorization in doctor_share
                 request.session["master_doctor_id"] = master_auth.doctor_id
                 request.session["master_login_email"] = master_auth.login_email
                 request.session["master_login_role"] = master_auth.role
 
                 return redirect("sharing:doctor_share", doctor_id=master_auth.doctor_id)
 
-        # Fall back to existing local auth (e.g., publisher users)
+        # 2) Fall back to existing local auth
         form = EmailAuthenticationForm(request, data=request.POST)
         if form.is_valid():
             user = form.get_user()
             login(request, user)
+
             doctor = getattr(user, "doctor_profile", None)
             if doctor:
                 request.session["master_doctor_id"] = doctor.doctor_id
                 request.session["master_login_email"] = user.email or ""
                 request.session["master_login_role"] = "doctor"
                 return redirect("sharing:doctor_share", doctor_id=doctor.doctor_id)
+
             return redirect("publisher:dashboard")
-
-
 
         messages.error(request, "Invalid login.")
     else:
         prefill = ""
         try:
-            # Prefer session value (set by Forgot Password flow), fall back to query param.
             prefill = (request.session.pop("prefill_login_email", "") or "").strip()
         except Exception:
             prefill = ""
@@ -878,6 +874,7 @@ def doctor_login(request):
             form = EmailAuthenticationForm(request)
 
     return render(request, "accounts/login.html", {"form": form, "show_auth_links": False})
+
 
 
 

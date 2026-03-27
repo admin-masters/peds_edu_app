@@ -175,11 +175,8 @@ def _effective_logged_in_doctor_id(request: HttpRequest) -> str:
     if session_doctor_id:
         return session_doctor_id
 
-    profile_doctor_id = ""
-    try:
-        profile_doctor_id = str(request.user.doctor_profile.doctor_id or "").strip()
-    except Exception:
-        profile_doctor_id = ""
+    doctor = getattr(request.user, "doctor_profile", None)
+    profile_doctor_id = str(getattr(doctor, "doctor_id", "") or "").strip()
 
     if profile_doctor_id:
         request.session["master_doctor_id"] = profile_doctor_id
@@ -187,6 +184,7 @@ def _effective_logged_in_doctor_id(request: HttpRequest) -> str:
         request.session["master_login_role"] = "doctor"
 
     return profile_doctor_id
+
 
 
 # def _tracking_audit_user_email() -> str:
@@ -262,13 +260,6 @@ def doctor_share(request: HttpRequest, doctor_id: str) -> HttpResponse:
     if not effective_doctor_id or effective_doctor_id != doctor_id:
         return HttpResponseForbidden("Not allowed")
 
-
-    if not session_doctor_id and profile_doctor_id == doctor_id:
-        request.session["master_doctor_id"] = doctor_id
-        request.session["master_login_email"] = getattr(request.user, "email", "") or ""
-        request.session["master_login_role"] = "doctor"
-
-
     row = fetch_master_doctor_row_by_id(doctor_id)
     if not row:
         return HttpResponseForbidden("Doctor not found")
@@ -315,9 +306,6 @@ def doctor_share(request: HttpRequest, doctor_id: str) -> HttpResponse:
     patient_payload = build_patient_link_payload(doctor_ctx, clinic_ctx)
     catalog_json["doctor_payload"] = sign_patient_payload(patient_payload)
 
-    # ------------------------------------------------------------------
-    # Campaign-specific bundle filtering
-    # ------------------------------------------------------------------
     all_campaign_bundle_codes = _fetch_all_campaign_bundle_codes()
 
     allowed_campaign_ids = [
@@ -338,7 +326,6 @@ def doctor_share(request: HttpRequest, doctor_id: str) -> HttpResponse:
             if not bcode:
                 continue
 
-            # keep default bundles OR allowed campaign bundles
             if bcode not in all_campaign_bundle_codes or bcode in allowed_bundle_codes:
                 filtered_bundles.append(b)
                 for vid in (b.get("video_codes") or []):
@@ -347,8 +334,6 @@ def doctor_share(request: HttpRequest, doctor_id: str) -> HttpResponse:
 
         catalog_json["bundles"] = filtered_bundles
 
-        # ✅ CRITICAL FIX:
-        # videos payload uses "id" (video code), not "code".:contentReference[oaicite:4]{index=4}
         if isinstance(catalog_json.get("videos"), list):
             catalog_json["videos"] = [
                 v for v in catalog_json.get("videos", [])
@@ -504,7 +489,6 @@ def create_share_activity(request: HttpRequest) -> HttpResponse:
     if not doctor_id:
         return HttpResponseForbidden("Not allowed")
 
-
     payload = _parse_json_body(request)
     share_public_id = _parse_uuid(payload.get("share_public_id"))
     shared_item_type = str(payload.get("shared_item_type") or "").strip().lower()
@@ -528,11 +512,13 @@ def create_share_activity(request: HttpRequest) -> HttpResponse:
     doctor_ctx, clinic_ctx = master_row_to_template_context(row)
     doctor_name = str(((doctor_ctx.get("user") or {}).get("full_name")) or "").strip()
     clinic_name = str(clinic_ctx.get("display_name") or "").strip()
+
     shared_item_code, shared_item_name = _resolve_shared_item_details(
         shared_item_type=shared_item_type,
         shared_item_code=shared_item_code,
         language_code=language_code,
     )
+
     recipient_reference = build_anonymized_recipient_reference(
         doctor_id=doctor_id,
         recipient_identifier=recipient_identifier,
