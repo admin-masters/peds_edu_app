@@ -847,10 +847,16 @@ def doctor_login(request):
         if form.is_valid():
             user = form.get_user()
             login(request, user)
+        
             doctor = getattr(user, "doctor_profile", None)
             if doctor:
+                request.session["master_doctor_id"] = doctor.doctor_id
+                request.session["master_login_email"] = user.email or ""
+                request.session["master_login_role"] = "doctor"
                 return redirect("sharing:doctor_share", doctor_id=doctor.doctor_id)
+        
             return redirect("publisher:dashboard")
+
 
         messages.error(request, "Invalid login.")
     else:
@@ -1141,4 +1147,3 @@ def _send_master_doctor_access_email(
         to_emails=[to_email],
         plain_text_content=body,
     )
-
