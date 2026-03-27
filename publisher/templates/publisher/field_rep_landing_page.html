@@ -5,42 +5,61 @@
 {% block header_title %}Field Rep Landing{% endblock %}
 
 {% block content %}
-  <div class="card">
-    <h2>Register doctor for campaign</h2>
+<div class="page-shell page-shell--narrow">
+  <section class="card hero-card stack-lg">
+    <div class="section-heading__text">
+      <h2>Register doctor for campaign</h2>
+    </div>
 
-    <p><strong>Campaign ID:</strong> {{ campaign_id }}</p>
-
-    {% if campaign %}
-      <p><strong>Campaign name:</strong> {{ campaign.new_video_cluster_name }}</p>
-      <p><strong>Doctors registered:</strong> {{ enrolled_count }}{% if doctors_supported %} / {{ doctors_supported }}{% endif %}</p>
-    {% endif %}
+    <div class="info-grid">
+      <div class="info-card">
+        <span class="info-card__icon"><svg class="icon icon-lg" aria-hidden="true"><use href="#icon-folder"></use></svg></span>
+        <div>
+          <div class="info-card__label">Campaign ID</div>
+          <div class="info-card__value">{{ campaign_id }}</div>
+        </div>
+      </div>
+      {% if campaign %}
+        <div class="info-card">
+          <span class="info-card__icon"><svg class="icon icon-lg" aria-hidden="true"><use href="#icon-layers"></use></svg></span>
+          <div>
+            <div class="info-card__label">Campaign name</div>
+            <div class="info-card__value">{{ campaign.new_video_cluster_name }}</div>
+          </div>
+        </div>
+        <div class="info-card">
+          <span class="info-card__icon"><svg class="icon icon-lg" aria-hidden="true"><use href="#icon-user"></use></svg></span>
+          <div>
+            <div class="info-card__label">Doctors registered</div>
+            <div class="info-card__value">{{ enrolled_count }}{% if doctors_supported %} / {{ doctors_supported }}{% endif %}</div>
+          </div>
+        </div>
+      {% endif %}
+    </div>
 
     {% if limit_reached %}
-      <div class="message error" style="margin-top: 12px;">
-        {{ limit_message }}
-      </div>
+      <div class="message error">{{ limit_message }}</div>
     {% else %}
-      <form method="post">
+      <form method="post" class="form-stack">
         {% csrf_token %}
         {% for field in form %}
-          <label for="{{ field.id_for_label }}">{{ field.label }}</label>
-          {{ field }}
-          {% if field.errors %}
-            <div class="message error">{{ field.errors|striptags }}</div>
-          {% endif %}
+          <div class="field-group">
+            <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+            {% if field.errors %}
+              <div class="message error">{{ field.errors|striptags }}</div>
+            {% endif %}
+          </div>
         {% endfor %}
-        <div style="margin-top: 16px;">
+        <div class="form-actions">
           <button type="submit">Submit</button>
         </div>
       </form>
     {% endif %}
-{% if limit_reached and not debug_mode %}
-  <p style="margin-top: 12px; color: #666;">
-    <small>Troubleshooting: append <code>&amp;debug=1</code> to this URL to show debug details on-screen.</small>
-  </p>
-{% endif %}
 
-
-  </div>
+    {% if limit_reached and not debug_mode %}
+      <p class="form-note">Troubleshooting: append <code>&amp;debug=1</code> to this URL to show debug details on-screen.</p>
+    {% endif %}
+  </section>
+</div>
 {% endblock %}
-

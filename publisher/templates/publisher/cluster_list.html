@@ -1,34 +1,49 @@
 {% extends "base.html" %}
 {% block content %}
-  <h2>Video Bundles</h2>
+<div class="page-shell">
+  <section class="card stack-lg">
+    <div class="section-heading">
+      <div class="section-heading__text">
+        <h1>Video Bundles</h1>
+      </div>
+      <a class="btn" href="{% url 'publisher:cluster_create' %}">New Bundle</a>
+    </div>
 
-  <form method="get" style="margin-bottom:12px;">
-    <input name="q" value="{{ q }}" placeholder="Search by code/keywords" />
-    <button type="submit">Search</button>
-    <a href="{% url 'publisher:cluster_create' %}" style="margin-left:12px;">+ New Bundle</a>
-  </form>
+    <form method="get" class="toolbar">
+      <div class="toolbar__grow">
+        <input name="q" value="{{ q }}" placeholder="Search by code or keywords" />
+      </div>
+      <button type="submit" class="btn btn-secondary">Search</button>
+    </form>
 
-  <table border="1" cellpadding="8" cellspacing="0">
-    <tr>
-      <th>Code</th>
-      <th>Name</th>
-      <th>Trigger</th>
-      <th>Published</th>
-      <th>Active</th>
-      <th>Action</th>
-    </tr>
-
-    {% for r in rows %}
-      <tr>
-        <td>{{ r.code }}</td>
-        <td>{{ r.display_name }}</td>
-        <td>{% if r.trigger %}{{ r.trigger.display_name }}{% else %}-{% endif %}</td>
-        <td>{{ r.is_published }}</td>
-        <td>{{ r.is_active }}</td>
-        <td><a href="{% url 'publisher:cluster_edit' r.pk %}">Edit</a></td>
-      </tr>
-    {% empty %}
-      <tr><td colspan="6">No bundles found.</td></tr>
-    {% endfor %}
-  </table>
+    <div class="table-card">
+      <table>
+        <thead>
+          <tr>
+            <th>Code</th>
+            <th>Name</th>
+            <th>Trigger</th>
+            <th>Published</th>
+            <th>Active</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+            <tr>
+              <td>{{ r.code }}</td>
+              <td>{{ r.display_name }}</td>
+              <td>{% if r.trigger %}{{ r.trigger.display_name }}{% else %}-{% endif %}</td>
+              <td>{{ r.is_published }}</td>
+              <td>{{ r.is_active }}</td>
+              <td><a href="{% url 'publisher:cluster_edit' r.pk %}">Edit</a></td>
+            </tr>
+          {% empty %}
+            <tr><td class="table-empty" colspan="6">No bundles found.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
 {% endblock %}

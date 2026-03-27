@@ -3,132 +3,152 @@
 {% block header_title %}Share Tracking Dashboard{% endblock %}
 
 {% block content %}
-<div class="card">
-  <div style="display:flex; justify-content:space-between; gap:16px; align-items:center; flex-wrap:wrap;">
-    <div>
-      <h2 style="margin-bottom: 6px;">Share Activity Overview</h2>
-      <div class="muted">Doctor-level share counts, recipient references, and video playback milestones.</div>
+<div class="page-shell">
+  <section class="card hero-card">
+    <div class="section-heading">
+      <div class="section-heading__text">
+        <h1>Share Activity Overview</h1>
+        <p class="section-subtitle">Doctor-level share counts, recipient references, and video playback milestones.</p>
+      </div>
+      <a class="btn btn-secondary" href="{% url 'sharing:tracking_logout' %}">Logout</a>
     </div>
-    <a class="btn btn-secondary" href="{% url 'sharing:tracking_logout' %}">Logout</a>
-  </div>
-</div>
+  </section>
 
-<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:16px;">
-  <div class="card">
-    <div class="muted">Doctors tracked</div>
-    <div style="font-size: 2rem; font-weight: 800;">{{ stats.doctor_count }}</div>
-  </div>
-  <div class="card">
-    <div class="muted">Total shares</div>
-    <div style="font-size: 2rem; font-weight: 800;">{{ stats.share_count }}</div>
-  </div>
-  <div class="card">
-    <div class="muted">Playback events</div>
-    <div style="font-size: 2rem; font-weight: 800;">{{ stats.playback_event_count }}</div>
-  </div>
-  <div class="card">
-    <div class="muted">Unique items shared</div>
-    <div style="font-size: 2rem; font-weight: 800;">{{ stats.unique_items_shared }}</div>
-  </div>
-</div>
+  <section class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-card__header">
+        <span class="stat-card__label">Doctors tracked</span>
+        <span class="stat-card__icon"><svg class="icon icon-lg" aria-hidden="true"><use href="#icon-user"></use></svg></span>
+      </div>
+      <div class="stat-card__value">{{ stats.doctor_count }}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-card__header">
+        <span class="stat-card__label">Total shares</span>
+        <span class="stat-card__icon"><svg class="icon icon-lg" aria-hidden="true"><use href="#icon-share"></use></svg></span>
+      </div>
+      <div class="stat-card__value">{{ stats.share_count }}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-card__header">
+        <span class="stat-card__label">Playback events</span>
+        <span class="stat-card__icon"><svg class="icon icon-lg" aria-hidden="true"><use href="#icon-play"></use></svg></span>
+      </div>
+      <div class="stat-card__value">{{ stats.playback_event_count }}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-card__header">
+        <span class="stat-card__label">Unique items shared</span>
+        <span class="stat-card__icon"><svg class="icon icon-lg" aria-hidden="true"><use href="#icon-layers"></use></svg></span>
+      </div>
+      <div class="stat-card__value">{{ stats.unique_items_shared }}</div>
+    </div>
+  </section>
 
-<div class="card">
-  <h3 style="margin-bottom: 16px;">Doctor Summary</h3>
-  <div style="overflow-x:auto;">
-    <table style="width:100%; border-collapse: collapse;">
-      <thead>
-        <tr>
-          <th style="text-align:left; padding:10px; border-bottom:1px solid var(--border);">Doctor ID</th>
-          <th style="text-align:left; padding:10px; border-bottom:1px solid var(--border);">Doctor</th>
-          <th style="text-align:left; padding:10px; border-bottom:1px solid var(--border);">Clinic</th>
-          <th style="text-align:right; padding:10px; border-bottom:1px solid var(--border);">Total shares</th>
-          <th style="text-align:left; padding:10px; border-bottom:1px solid var(--border);">Last shared</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in summary_rows %}
+  <section class="card stack-md">
+    <div class="section-heading__text">
+      <h3>Doctor Summary</h3>
+    </div>
+    <div class="table-card">
+      <table>
+        <thead>
           <tr>
-            <td style="padding:10px; border-bottom:1px solid var(--border);">{{ row.doctor_id }}</td>
-            <td style="padding:10px; border-bottom:1px solid var(--border);">{{ row.doctor_name_snapshot|default:"-" }}</td>
-            <td style="padding:10px; border-bottom:1px solid var(--border);">{{ row.clinic_name_snapshot|default:"-" }}</td>
-            <td style="padding:10px; border-bottom:1px solid var(--border); text-align:right;">{{ row.total_shares }}</td>
-            <td style="padding:10px; border-bottom:1px solid var(--border);">{{ row.last_shared_at|date:"Y-m-d H:i" }}</td>
+            <th>Doctor ID</th>
+            <th>Doctor</th>
+            <th>Clinic</th>
+            <th class="text-right">Total shares</th>
+            <th>Last shared</th>
           </tr>
-        {% empty %}
-          <tr><td colspan="5" style="padding:14px;">No share activity yet.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>
+        </thead>
+        <tbody>
+          {% for row in summary_rows %}
+            <tr>
+              <td>{{ row.doctor_id }}</td>
+              <td>{{ row.doctor_name_snapshot|default:"-" }}</td>
+              <td>{{ row.clinic_name_snapshot|default:"-" }}</td>
+              <td class="text-right">{{ row.total_shares }}</td>
+              <td>{{ row.last_shared_at|date:"Y-m-d H:i" }}</td>
+            </tr>
+          {% empty %}
+            <tr><td class="table-empty" colspan="5">No share activity yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
 
-<div class="card">
-  <h3 style="margin-bottom: 16px;">Recent Shares</h3>
-  <div style="overflow-x:auto;">
-    <table style="width:100%; border-collapse: collapse;">
-      <thead>
-        <tr>
-          <th style="text-align:left; padding:10px; border-bottom:1px solid var(--border);">When</th>
-          <th style="text-align:left; padding:10px; border-bottom:1px solid var(--border);">Doctor</th>
-          <th style="text-align:left; padding:10px; border-bottom:1px solid var(--border);">Type</th>
-          <th style="text-align:left; padding:10px; border-bottom:1px solid var(--border);">Shared item</th>
-          <th style="text-align:left; padding:10px; border-bottom:1px solid var(--border);">Recipient ref</th>
-          <th style="text-align:left; padding:10px; border-bottom:1px solid var(--border);">Language</th>
-          <th style="text-align:left; padding:10px; border-bottom:1px solid var(--border);">Channel</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in recent_shares %}
+  <section class="card stack-md">
+    <div class="section-heading__text">
+      <h3>Recent Shares</h3>
+    </div>
+    <div class="table-card">
+      <table>
+        <thead>
           <tr>
-            <td style="padding:10px; border-bottom:1px solid var(--border);">{{ row.shared_at|date:"Y-m-d H:i" }}</td>
-            <td style="padding:10px; border-bottom:1px solid var(--border);">{{ row.doctor_name_snapshot|default:row.doctor_id }}</td>
-            <td style="padding:10px; border-bottom:1px solid var(--border);">{{ row.shared_item_type }}</td>
-            <td style="padding:10px; border-bottom:1px solid var(--border);">{{ row.shared_item_name }}</td>
-            <td style="padding:10px; border-bottom:1px solid var(--border); font-family: monospace;">{{ row.recipient_reference }}</td>
-            <td style="padding:10px; border-bottom:1px solid var(--border);">{{ row.language_code }}</td>
-            <td style="padding:10px; border-bottom:1px solid var(--border);">{{ row.share_channel }}</td>
+            <th>When</th>
+            <th>Doctor</th>
+            <th>Type</th>
+            <th>Shared item</th>
+            <th>Recipient ref</th>
+            <th>Language</th>
+            <th>Channel</th>
           </tr>
-        {% empty %}
-          <tr><td colspan="7" style="padding:14px;">No share records available.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>
+        </thead>
+        <tbody>
+          {% for row in recent_shares %}
+            <tr>
+              <td>{{ row.shared_at|date:"Y-m-d H:i" }}</td>
+              <td>{{ row.doctor_name_snapshot|default:row.doctor_id }}</td>
+              <td>{{ row.shared_item_type }}</td>
+              <td>{{ row.shared_item_name }}</td>
+              <td class="mono">{{ row.recipient_reference }}</td>
+              <td>{{ row.language_code }}</td>
+              <td>{{ row.share_channel }}</td>
+            </tr>
+          {% empty %}
+            <tr><td class="table-empty" colspan="7">No share records available.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
 
-<div class="card">
-  <h3 style="margin-bottom: 16px;">Recent Playback Events</h3>
-  <div style="overflow-x:auto;">
-    <table style="width:100%; border-collapse: collapse;">
-      <thead>
-        <tr>
-          <th style="text-align:left; padding:10px; border-bottom:1px solid var(--border);">When</th>
-          <th style="text-align:left; padding:10px; border-bottom:1px solid var(--border);">Doctor ID</th>
-          <th style="text-align:left; padding:10px; border-bottom:1px solid var(--border);">Page type</th>
-          <th style="text-align:left; padding:10px; border-bottom:1px solid var(--border);">Event</th>
-          <th style="text-align:left; padding:10px; border-bottom:1px solid var(--border);">Video</th>
-          <th style="text-align:right; padding:10px; border-bottom:1px solid var(--border);">Milestone</th>
-          <th style="text-align:left; padding:10px; border-bottom:1px solid var(--border);">Share ref</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in recent_playback %}
+  <section class="card stack-md">
+    <div class="section-heading__text">
+      <h3>Recent Playback Events</h3>
+    </div>
+    <div class="table-card">
+      <table>
+        <thead>
           <tr>
-            <td style="padding:10px; border-bottom:1px solid var(--border);">{{ row.occurred_at|date:"Y-m-d H:i" }}</td>
-            <td style="padding:10px; border-bottom:1px solid var(--border);">{{ row.doctor_id }}</td>
-            <td style="padding:10px; border-bottom:1px solid var(--border);">{{ row.page_item_type }}</td>
-            <td style="padding:10px; border-bottom:1px solid var(--border);">{{ row.event_type }}</td>
-            <td style="padding:10px; border-bottom:1px solid var(--border);">{{ row.video_name|default:row.video_code }}</td>
-            <td style="padding:10px; border-bottom:1px solid var(--border); text-align:right;">
-              {% if row.milestone_percent %}{{ row.milestone_percent }}%{% else %}-{% endif %}
-            </td>
-            <td style="padding:10px; border-bottom:1px solid var(--border); font-family: monospace;">{{ row.share_public_id|default:"-" }}</td>
+            <th>When</th>
+            <th>Doctor ID</th>
+            <th>Page type</th>
+            <th>Event</th>
+            <th>Video</th>
+            <th class="text-right">Milestone</th>
+            <th>Share ref</th>
           </tr>
-        {% empty %}
-          <tr><td colspan="7" style="padding:14px;">No playback events available.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
+        </thead>
+        <tbody>
+          {% for row in recent_playback %}
+            <tr>
+              <td>{{ row.occurred_at|date:"Y-m-d H:i" }}</td>
+              <td>{{ row.doctor_id }}</td>
+              <td>{{ row.page_item_type }}</td>
+              <td>{{ row.event_type }}</td>
+              <td>{{ row.video_name|default:row.video_code }}</td>
+              <td class="text-right">
+                {% if row.milestone_percent %}{{ row.milestone_percent }}%{% else %}-{% endif %}
+              </td>
+              <td class="mono">{{ row.share_public_id|default:"-" }}</td>
+            </tr>
+          {% empty %}
+            <tr><td class="table-empty" colspan="7">No playback events available.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
 </div>
 {% endblock %}

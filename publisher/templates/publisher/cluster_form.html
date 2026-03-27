@@ -1,203 +1,221 @@
 {% extends "base.html" %}
 
 {% block content %}
-  <h2>
-    {% if is_new %}
-      Add Bundle
-    {% else %}
-      Edit Bundle: {{ cluster.code }}
-    {% endif %}
-  </h2>
+<div class="page-shell">
+  <section class="card stack-lg">
+    <div class="section-heading__text">
+      <h1>
+        {% if is_new %}
+          Add Bundle
+        {% else %}
+          Edit Bundle: {{ cluster.code }}
+        {% endif %}
+      </h1>
+    </div>
 
-  <form method="post">
-    {% csrf_token %}
+    <form method="post" class="form-stack">
+      {% csrf_token %}
 
-    <fieldset style="margin-bottom: 18px;">
-      <legend>Bundle Details</legend>
+      <fieldset class="stack-md">
+        <legend>Bundle Details</legend>
 
-      {% if form.non_field_errors %}
-        <div style="color:#b00020; margin:8px 0;">{{ form.non_field_errors }}</div>
-      {% endif %}
+        {% if form.non_field_errors %}
+          <div class="message error">{{ form.non_field_errors }}</div>
+        {% endif %}
 
-      <div style="margin:10px 0;">
-        <label>Code:</label><br>
-        {{ form.code }} {{ form.code.errors }}
-      </div>
+        <div class="form-grid form-grid--two">
+          <div class="field-group">
+            <label for="{{ form.code.id_for_label }}">Code</label>
+            {{ form.code }}
+            {{ form.code.errors }}
+          </div>
 
-      <div style="margin:10px 0;">
-        <label>Display name:</label><br>
-        {{ form.display_name }} {{ form.display_name.errors }}
-      </div>
+          <div class="field-group">
+            <label for="{{ form.display_name.id_for_label }}">Display name</label>
+            {{ form.display_name }}
+            {{ form.display_name.errors }}
+          </div>
+        </div>
 
-      <div style="margin:10px 0;">
-        <label>Description:</label><br>
-        {{ form.description }} {{ form.description.errors }}
-      </div>
+        <div class="field-group">
+          <label for="{{ form.description.id_for_label }}">Description</label>
+          {{ form.description }}
+          {{ form.description.errors }}
+        </div>
 
-      <div style="margin:10px 0;">
-        <label>Trigger:</label><br>
-        {{ form.trigger }} {{ form.trigger.errors }}
-      </div>
+        <div class="form-grid form-grid--two">
+          <div class="field-group">
+            <label for="{{ form.trigger.id_for_label }}">Trigger</label>
+            {{ form.trigger }}
+            {{ form.trigger.errors }}
+          </div>
 
-      <div style="margin:10px 0;">
-        <label>Is published:</label>
-        {{ form.is_published }} {{ form.is_published.errors }}
-      </div>
+          <div class="form-grid form-grid--two">
+            <div class="checkbox-field">
+              <div class="checkbox-row">{{ form.is_published }} <span>{{ form.is_published.label }}</span></div>
+              {{ form.is_published.errors }}
+            </div>
 
-      <div style="margin:10px 0;">
-        <label>Is active:</label>
-        {{ form.is_active }} {{ form.is_active.errors }}
-      </div>
-    </fieldset>
+            <div class="checkbox-field">
+              <div class="checkbox-row">{{ form.is_active }} <span>{{ form.is_active.label }}</span></div>
+              {{ form.is_active.errors }}
+            </div>
+          </div>
+        </div>
+      </fieldset>
 
-    <fieldset style="margin-bottom: 18px;">
-      <legend>Bundle Names (per language)</legend>
+      <fieldset class="stack-md">
+        <legend>Bundle Names (per language)</legend>
 
-      {{ lang_fs.management_form }}
+        {{ lang_fs.management_form }}
 
-      <table style="width:100%; border-collapse:collapse;">
-        <thead>
-          <tr>
-            <th style="text-align:left; padding:8px; border:1px solid #e5e7eb;">Language</th>
-            <th style="text-align:left; padding:8px; border:1px solid #e5e7eb;">Name</th>
-            <th style="text-align:left; padding:8px; border:1px solid #e5e7eb;">Delete?</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for f in lang_fs.forms %}
-            <tr>
-              <td style="padding:8px; border:1px solid #e5e7eb;">
-                {{ f.language_code }}
-                {{ f.language_code.errors }}
-              </td>
-              <td style="padding:8px; border:1px solid #e5e7eb;">
-                {{ f.name }}
-                {{ f.name.errors }}
-              </td>
-              <td style="padding:8px; border:1px solid #e5e7eb;">
-                {% if f.DELETE %}{{ f.DELETE }}{% endif %}
-              </td>
-            </tr>
-            {% if f.non_field_errors %}
+        <div class="table-card">
+          <table>
+            <thead>
               <tr>
-                <td colspan="3" style="padding:8px; border:1px solid #e5e7eb; color:#b00020;">
-                  {{ f.non_field_errors }}
-                </td>
+                <th>Language</th>
+                <th>Name</th>
+                <th>Delete?</th>
               </tr>
-            {% endif %}
-          {% endfor %}
-        </tbody>
-      </table>
-    </fieldset>
+            </thead>
+            <tbody>
+              {% for f in lang_fs.forms %}
+                <tr>
+                  <td>
+                    {{ f.language_code }}
+                    {{ f.language_code.errors }}
+                  </td>
+                  <td>
+                    {{ f.name }}
+                    {{ f.name.errors }}
+                  </td>
+                  <td>
+                    {% if f.DELETE %}{{ f.DELETE }}{% endif %}
+                  </td>
+                </tr>
+                {% if f.non_field_errors %}
+                  <tr>
+                    <td colspan="3">{{ f.non_field_errors }}</td>
+                  </tr>
+                {% endif %}
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </fieldset>
 
-    <fieldset style="margin-bottom: 18px;">
-      <legend>Videos in this Bundle</legend>
+      <fieldset class="stack-md">
+        <legend>Videos in this Bundle</legend>
 
-      {{ vid_fs.management_form }}
+        {{ vid_fs.management_form }}
 
-      <table style="width:100%; border-collapse:collapse;">
-        <thead>
-          <tr>
-            <th style="text-align:left; padding:8px; border:1px solid #e5e7eb;">Video</th>
-            <th style="text-align:left; padding:8px; border:1px solid #e5e7eb;">Sort order</th>
-            <th style="text-align:left; padding:8px; border:1px solid #e5e7eb;">Delete?</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for f in vid_fs.forms %}
-            <tr>
-              <td style="padding:8px; border:1px solid #e5e7eb;">
-                <input type="text"
-                       class="video-filter"
-                       data-target="{{ f.video.id_for_label }}"
-                       placeholder="Type to filter videos..."
-                       style="width:100%; margin-bottom:8px; padding:8px; border:1px solid #d1d5db; border-radius:8px;">
-                {{ f.video }}
-                {{ f.video.errors }}
-              </td>
-              <td style="padding:8px; border:1px solid #e5e7eb;">
-                {{ f.sort_order }}
-                {{ f.sort_order.errors }}
-              </td>
-              <td style="padding:8px; border:1px solid #e5e7eb;">
-                {% if f.DELETE %}{{ f.DELETE }}{% endif %}
-              </td>
-            </tr>
-            {% if f.non_field_errors %}
+        <div class="table-card">
+          <table>
+            <thead>
               <tr>
-                <td colspan="3" style="padding:8px; border:1px solid #e5e7eb; color:#b00020;">
-                  {{ f.non_field_errors }}
-                </td>
+                <th>Video</th>
+                <th>Sort order</th>
+                <th>Delete?</th>
               </tr>
-            {% endif %}
-          {% endfor %}
-        </tbody>
-      </table>
+            </thead>
+            <tbody>
+              {% for f in vid_fs.forms %}
+                <tr>
+                  <td>
+                    <input
+                      type="text"
+                      class="video-filter"
+                      data-target="{{ f.video.id_for_label }}"
+                      placeholder="Type to filter videos..."
+                    />
+                    {{ f.video }}
+                    {{ f.video.errors }}
+                  </td>
+                  <td>
+                    {{ f.sort_order }}
+                    {{ f.sort_order.errors }}
+                  </td>
+                  <td>
+                    {% if f.DELETE %}{{ f.DELETE }}{% endif %}
+                  </td>
+                </tr>
+                {% if f.non_field_errors %}
+                  <tr>
+                    <td colspan="3">{{ f.non_field_errors }}</td>
+                  </tr>
+                {% endif %}
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
 
-      <div style="margin-top:10px; color:#6b7280; font-size:13px;">
-        Tip: Start typing above a dropdown to filter its video options.
+        <p class="field-hint">Tip: Start typing above a dropdown to filter its video options.</p>
+      </fieldset>
+
+      <div class="form-actions">
+        <button type="submit">Save</button>
+        <a class="btn btn-secondary" href="{% url 'publisher:cluster_list' %}">Back</a>
       </div>
-    </fieldset>
+    </form>
+  </section>
+</div>
 
-    <button type="submit">Save</button>
-    <a href="{% url 'publisher:cluster_list' %}" style="margin-left: 12px;">Back</a>
-  </form>
+<script>
+(function () {
+  const selectCache = new Map();
 
-  <script>
-  (function() {
-    // Build an option cache per select
-    const selectCache = new Map();
-
-    function cacheSelect(selectEl) {
-      if (!selectEl || selectCache.has(selectEl)) return;
-      const opts = Array.from(selectEl.options).map(o => ({ value: o.value, text: o.text }));
-      selectCache.set(selectEl, opts);
+  function cacheSelect(selectEl) {
+    if (!selectEl || selectCache.has(selectEl)) {
+      return;
     }
-
-    function applyFilter(selectEl, query) {
-      cacheSelect(selectEl);
-      const all = selectCache.get(selectEl) || [];
-      const q = (query || "").toLowerCase().trim();
-
-      const current = selectEl.value;
-
-      const filtered = q
-        ? all.filter(o => (o.text || "").toLowerCase().includes(q))
-        : all;
-
-      // Rebuild options
-      selectEl.innerHTML = "";
-      filtered.forEach(o => {
-        const opt = document.createElement("option");
-        opt.value = o.value;
-        opt.textContent = o.text;
-        selectEl.appendChild(opt);
-      });
-
-      // Restore selection if still present
-      if (filtered.some(o => o.value === current)) {
-        selectEl.value = current;
-      } else {
-        // If current is not present, keep first option selected
-        selectEl.selectedIndex = 0;
-      }
-    }
-
-    // Hook all video selects
-    document.querySelectorAll("select.video-select").forEach(cacheSelect);
-
-    // Connect filter inputs
-    document.querySelectorAll("input.video-filter").forEach(inp => {
-      const targetId = inp.getAttribute("data-target");
-      const selectEl = targetId ? document.getElementById(targetId) : null;
-      if (!selectEl) return;
-
-      cacheSelect(selectEl);
-
-      inp.addEventListener("input", () => {
-        applyFilter(selectEl, inp.value);
-      });
+    const options = Array.from(selectEl.options).map(function (option) {
+      return { value: option.value, text: option.text };
     });
-  })();
-  </script>
+    selectCache.set(selectEl, options);
+  }
+
+  function applyFilter(selectEl, query) {
+    cacheSelect(selectEl);
+    const all = selectCache.get(selectEl) || [];
+    const lowered = (query || "").toLowerCase().trim();
+    const current = selectEl.value;
+
+    const filtered = lowered
+      ? all.filter(function (option) {
+          return (option.text || "").toLowerCase().includes(lowered);
+        })
+      : all;
+
+    selectEl.innerHTML = "";
+    filtered.forEach(function (option) {
+      const element = document.createElement("option");
+      element.value = option.value;
+      element.textContent = option.text;
+      selectEl.appendChild(element);
+    });
+
+    if (filtered.some(function (option) { return option.value === current; })) {
+      selectEl.value = current;
+    } else {
+      selectEl.selectedIndex = 0;
+    }
+  }
+
+  document.querySelectorAll("select.video-select").forEach(cacheSelect);
+
+  document.querySelectorAll("input.video-filter").forEach(function (input) {
+    const targetId = input.getAttribute("data-target");
+    const selectEl = targetId ? document.getElementById(targetId) : null;
+    if (!selectEl) {
+      return;
+    }
+
+    cacheSelect(selectEl);
+
+    input.addEventListener("input", function () {
+      applyFilter(selectEl, input.value);
+    });
+  });
+})();
+</script>
 {% endblock %}

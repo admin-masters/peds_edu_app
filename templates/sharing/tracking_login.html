@@ -3,35 +3,25 @@
 {% block header_title %}Share Tracking Login{% endblock %}
 
 {% block content %}
-<div class="card" style="max-width: 460px; margin: 32px auto;">
-  <h2 style="margin-bottom: 12px;">Restricted Access</h2>
-  <p class="muted" style="margin-bottom: 20px;">
-  This dashboard is limited to a superuser account.
-</p>
-
-
-  {% if messages %}
-    {% for message in messages %}
-      <div style="margin-bottom: 12px; padding: 12px 14px; border-radius: 8px; background: #fef2f2; color: #991b1b; border: 1px solid #fecaca;">
-        {{ message }}
-      </div>
-    {% endfor %}
-  {% endif %}
-
-  <form method="post">
-    {% csrf_token %}
-    <div style="display: grid; gap: 16px;">
-      <div>
-        <label for="email">Email</label>
-       <input id="email" name="email" type="email" autocomplete="username" required>
-
-      </div>
-      <div>
-        <label for="password">Password</label>
-        <input id="password" name="password" type="password" autocomplete="current-password" required>
-      </div>
-      <button type="submit" class="btn btn-primary">Open Tracking Dashboard</button>
+<div class="page-shell page-shell--auth">
+  <section class="card hero-card stack-lg">
+    <div class="section-heading__text">
+      <h2>Restricted Access</h2>
+      <p class="section-subtitle">This dashboard is limited to the dedicated tracking viewer account.</p>
     </div>
-  </form>
+
+    <form method="post" class="form-stack">
+      {% csrf_token %}
+      <div class="field-group">
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" value="{{ allowed_email }}" autocomplete="username" required />
+      </div>
+      <div class="field-group">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required />
+      </div>
+      <button type="submit" class="btn btn-block">Open Tracking Dashboard</button>
+    </form>
+  </section>
 </div>
 {% endblock %}

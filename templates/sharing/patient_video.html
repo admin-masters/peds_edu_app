@@ -1,119 +1,111 @@
 {% extends "base.html" %}
-{% block title %}{{ clinic.display_name }} — Video{% endblock %}
+{% block title %}{{ clinic.display_name }} - Video{% endblock %}
 {% block header_title %}{{ clinic.display_name }}{% endblock %}
 
 {% block content %}
-
-<style>
-  /* Language-specific font stacks for the few translated label strings on patient pages */
-  .i18n-text.i18n-hi, .i18n-text.i18n-mr { font-family: "Noto Sans Devanagari", "Mangal", "Kohinoor Devanagari", sans-serif; }
-  .i18n-text.i18n-bn { font-family: "Noto Sans Bengali", "Nirmala UI", "Lohit Bengali", sans-serif; }
-  .i18n-text.i18n-ta { font-family: "Noto Sans Tamil", "Nirmala UI", "Lohit Tamil", sans-serif; }
-  .i18n-text.i18n-te { font-family: "Noto Sans Telugu", "Nirmala UI", "Lohit Telugu", sans-serif; }
-  .i18n-text.i18n-kn { font-family: "Noto Sans Kannada", "Nirmala UI", "Lohit Kannada", sans-serif; }
-  .i18n-text.i18n-ml { font-family: "Noto Sans Malayalam", "Nirmala UI", "Lohit Malayalam", sans-serif; }
-</style>
-
-<div class="card">
-  <div style="display: flex; align-items: flex-start; gap: 20px; flex-wrap: wrap; padding-bottom: 24px; border-bottom: 1px solid var(--border);">
-    <div style="width: 80px; height: 80px; border-radius: 20px; border: 2px solid var(--border); background: linear-gradient(135deg, var(--primary), #3b82f6); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 32px; font-weight: 800; position: relative; overflow: hidden; flex-shrink: 0;">
-      <div style="line-height: 1;">{{ doctor.user.full_name|default:"D"|slice:":1"|upper }}</div>
-      {% if doctor.photo %}
-        <img src="{{ doctor.photo.url }}"
-             alt="Doctor photo"
-             loading="lazy"
-             onerror="this.remove();"
-             style="position:absolute; inset:0; width:100%; height:100%; object-fit:cover;" />
-      {% endif %}
-    </div>
-
-    <div style="flex: 1; min-width: 0;">
-      <div style="font-size: 1.5rem; font-weight: 800; color: var(--text); margin-bottom: 4px;">Dr. {{ doctor.user.full_name }}</div>
-      <div class="muted" style="font-size: 0.9375rem; margin-bottom: 8px;">{{ clinic.display_name }}</div>
-      <div class="muted" style="font-size: 0.875rem; margin-bottom: 4px;">{{ clinic.state }}{% if clinic.postal_code %} — {{ clinic.postal_code }}{% endif %}</div>
-
-      <div class="muted" style="margin-top: 12px; font-size: 0.875rem; line-height: 1.5;">
-        {{ clinic.address_text|linebreaksbr }}
-      </div>
-
-      <div class="muted" style="margin-top: 8px; font-size: 0.875rem;">
-        <div style="display: inline-flex; align-items: center; gap: 6px;">
-          <span style="font-size: 1rem;">📞</span>
-          <span><span class="i18n-text i18n-{{ selected_lang }}">{{ ui.clinic_phone }}</span> {{ clinic.clinic_phone }}</span>
-        </div>
-        {% if clinic.clinic_whatsapp_number %}
-          <div style="display: inline-flex; align-items: center; gap: 6px; margin-left: 16px;">
-            <span style="font-size: 1rem;">💬</span>
-            <span><span class="i18n-text i18n-{{ selected_lang }}">{{ ui.whatsapp }}</span> {{ clinic.clinic_whatsapp_number }}</span>
-          </div>
+<div class="page-shell">
+  <section class="card hero-card stack-lg">
+    <div class="profile-header">
+      <div class="profile-avatar" aria-label="Doctor photo">
+        {{ doctor.user.full_name|default:"D"|slice:":1"|upper }}
+        {% if doctor.photo %}
+          <img
+            src="{{ doctor.photo.url }}"
+            alt="Doctor photo"
+            loading="lazy"
+            onerror="this.remove();"
+          />
         {% endif %}
       </div>
-    </div>
-  </div>
 
-  <div style="margin-top: 24px; margin-bottom: 24px;">
-    <div class="row" style="max-width: 300px;">
-      <div>
-        <label for="lang" style="font-size: 0.875rem; font-weight: 600; color: var(--text); margin-bottom: 8px; display: block;">Language</label>
-        <select id="lang" style="width: 100%; padding: 12px; border: 1.5px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font-size: 0.9375rem;">
-          {% for code,name in languages %}
-            <option value="{{ code }}" {% if code == selected_lang %}selected{% endif %}>
-              {{ name }}
-            </option>
+      <div class="profile-title">
+        <div class="profile-name">Dr. {{ doctor.user.full_name }}</div>
+        <div class="profile-subtitle">{{ clinic.display_name }}</div>
+        <p class="muted">{{ clinic.state }}{% if clinic.postal_code %} - {{ clinic.postal_code }}{% endif %}</p>
+        <p class="muted profile-address">{{ clinic.address_text|linebreaksbr }}</p>
+        <div class="contact-strip">
+          <a class="contact-pill" href="#" data-phone-kind="call" data-phone-number="{{ clinic.clinic_phone }}">
+            <svg class="icon" aria-hidden="true"><use href="#icon-phone"></use></svg>
+            <span><span class="i18n-text i18n-{{ selected_lang }}">{{ ui.clinic_phone }}</span> {{ clinic.clinic_phone }}</span>
+          </a>
+          {% if clinic.clinic_whatsapp_number %}
+            <a
+              class="contact-pill"
+              href="#"
+              data-phone-kind="whatsapp"
+              data-phone-number="{{ clinic.clinic_whatsapp_number }}"
+            >
+              <svg class="icon" aria-hidden="true"><use href="#icon-message"></use></svg>
+              <span><span class="i18n-text i18n-{{ selected_lang }}">{{ ui.whatsapp }}</span> {{ clinic.clinic_whatsapp_number }}</span>
+            </a>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card stack-lg">
+    <div class="section-heading">
+      <div class="section-heading__text">
+        <h2>{% if vlang %}{{ vlang.title }}{% else %}Video{% endif %}</h2>
+        <p class="section-subtitle"><span class="i18n-text i18n-{{ selected_lang }}">{{ ui.educational_content }}</span></p>
+      </div>
+      <div class="field-group language-picker">
+        <label for="lang">Language</label>
+        <select id="lang">
+          {% for code, name in languages %}
+            <option value="{{ code }}" {% if code == selected_lang %}selected{% endif %}>{{ name }}</option>
           {% endfor %}
         </select>
       </div>
     </div>
-  </div>
 
-  <div style="margin-top: 24px;">
     {% if vlang and vlang.youtube_url %}
-      <div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; border-radius: 16px; border: 1px solid var(--border); background: #000; box-shadow: var(--shadow-md);">
-        <iframe id="yt-player"
-                data-youtube-url="{{ vlang.youtube_url }}"
-                data-share-public-id="{{ share_public_id }}"
-                data-video-code="{{ video.code }}"
-                data-video-title="{{ vlang.title|default:video.code }}"
-                data-doctor-id="{{ doctor.doctor_id }}"
-                data-doctor-name="{{ doctor.user.full_name }}"
-                data-clinic-name="{{ clinic.display_name }}"
-                referrerpolicy="strict-origin-when-cross-origin"
-                loading="lazy"
-                style="position: absolute; top:0; left:0; width:100%; height:100%; border:0;"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                allowfullscreen></iframe>
+      <div class="video-frame">
+        <iframe
+          id="yt-player"
+          data-youtube-url="{{ vlang.youtube_url }}"
+          data-share-public-id="{{ share_public_id }}"
+          data-video-code="{{ video.code }}"
+          data-video-title="{{ vlang.title|default:video.code }}"
+          data-doctor-id="{{ doctor.doctor_id }}"
+          data-doctor-name="{{ doctor.user.full_name }}"
+          data-clinic-name="{{ clinic.display_name }}"
+          referrerpolicy="strict-origin-when-cross-origin"
+          loading="lazy"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          allowfullscreen
+        ></iframe>
 
-        <div id="yt-fallback"
-             style="display:none; position: absolute; top:0; left:0; width:100%; height:100%; align-items:center; justify-content:center; flex-direction: column; gap: 16px; padding: 24px; background: var(--surface-2); text-align: center;">
-          <div style="font-size: 48px; opacity: 0.5;">🎬</div>
-          <div class="muted" style="margin-bottom: 16px;">Unable to embed this video.</div>
-          <a id="yt-fallback-link" href="{{ vlang.youtube_url }}" target="_blank" rel="noopener noreferrer" style="padding: 12px 20px; background: var(--primary); color: #fff; border-radius: var(--radius-sm); font-weight: 600; text-decoration: none; font-size: 0.9375rem;">
+        <div id="yt-fallback" class="video-fallback" hidden>
+          <div class="empty-state__icon">
+            <svg class="icon icon-lg" aria-hidden="true"><use href="#icon-play"></use></svg>
+          </div>
+          <div class="empty-state__title">Unable to embed this video</div>
+          <a id="yt-fallback-link" class="btn" href="{{ vlang.youtube_url }}" target="_blank" rel="noopener noreferrer">
             Open on YouTube
           </a>
         </div>
       </div>
     {% else %}
-      <div style="padding: 48px 24px; background: var(--surface-2); border-radius: 16px; text-align: center;">
-        <div style="font-size: 48px; margin-bottom: 16px; opacity: 0.5;">⏳</div>
-        <div style="font-size: 1.125rem; font-weight: 600; color: var(--text); margin-bottom: 8px;">Video Coming Soon</div>
-        <div class="muted">This educational video will be available shortly.</div>
+      <div class="empty-state">
+        <div class="empty-state__icon">
+          <svg class="icon icon-lg" aria-hidden="true"><use href="#icon-calendar"></use></svg>
+        </div>
+        <div class="empty-state__title">Video Coming Soon</div>
+        <p class="muted">This educational video will be available shortly.</p>
       </div>
     {% endif %}
-
-    {% if vlang %}
-      <div style="margin-top: 20px; padding: 20px; background: var(--surface); border-radius: var(--radius-sm); border-left: 4px solid var(--primary);">
-        <div style="font-size: 1.25rem; font-weight: 700; color: var(--text); margin-bottom: 8px;">{{ vlang.title }}</div>
-        <div class="muted" style="font-size: 0.875rem;"><span class="i18n-text i18n-{{ selected_lang }}">{{ ui.educational_content }}</span></div>
-      </div>
-    {% endif %}
-  </div>
+  </section>
 </div>
 
 <script>
 (function () {
   const iframe = document.getElementById("yt-player");
   const fallback = document.getElementById("yt-fallback");
-  if (!iframe) return;
+  if (!iframe) {
+    return;
+  }
   const playbackEventUrl = "{% url 'sharing:log_playback_event' %}";
 
   const rawUrl = iframe.dataset.youtubeUrl || "";
@@ -122,12 +114,12 @@
   );
 
   if (!match) {
-    iframe.style.display = "none";
-    if (fallback) fallback.style.display = "flex";
+    iframe.hidden = true;
+    if (fallback) {
+      fallback.hidden = false;
+    }
   } else {
     const videoId = match[1];
-
-    // Reduce related suggestions / branding inside the embed as much as YouTube allows.
     const params = new URLSearchParams({
       rel: "0",
       modestbranding: "1",
@@ -142,24 +134,30 @@
 
     iframe.src = "https://www.youtube-nocookie.com/embed/" + videoId + "?" + params.toString();
 
-    iframe.addEventListener("error", () => {
-      iframe.style.display = "none";
-      if (fallback) fallback.style.display = "flex";
+    iframe.addEventListener("error", function () {
+      iframe.hidden = true;
+      if (fallback) {
+        fallback.hidden = false;
+      }
     });
   }
 
   function getCookie(name) {
     const cookieValue = document.cookie
       .split(";")
-      .map(part => part.trim())
-      .find(part => part.startsWith(`${name}=`));
-    if (!cookieValue) return "";
+      .map(function (part) { return part.trim(); })
+      .find(function (part) { return part.startsWith(name + "="); });
+    if (!cookieValue) {
+      return "";
+    }
     return decodeURIComponent(cookieValue.split("=").slice(1).join("="));
   }
 
   function postPlaybackEvent(body) {
     const csrfToken = getCookie("csrftoken");
-    if (!window.fetch || !csrfToken) return;
+    if (!window.fetch || !csrfToken) {
+      return;
+    }
 
     fetch(playbackEventUrl, {
       method: "POST",
@@ -167,15 +165,19 @@
       keepalive: true,
       headers: {
         "Content-Type": "application/json",
-        "X-CSRFToken": csrfToken,
+        "X-CSRFToken": csrfToken
       },
-      body: JSON.stringify(body),
-    }).catch(() => {});
+      body: JSON.stringify(body)
+    }).catch(function () {});
   }
 
   function trackVideoPlayback() {
-    if (iframe.dataset.playerInitialized === "1") return;
-    if (!window.YT || !window.YT.Player || !match) return;
+    if (iframe.dataset.playerInitialized === "1") {
+      return;
+    }
+    if (!window.YT || !window.YT.Player || !match) {
+      return;
+    }
     iframe.dataset.playerInitialized = "1";
 
     const firedMilestones = new Set();
@@ -199,17 +201,19 @@
         event_type: eventType,
         video_code: iframe.dataset.videoCode || "",
         video_name: iframe.dataset.videoTitle || "",
-        milestone_percent: milestonePercent == null ? null : milestonePercent,
+        milestone_percent: milestonePercent == null ? null : milestonePercent
       });
     }
 
     function maybeTrackProgress(player) {
       const duration = typeof player.getDuration === "function" ? player.getDuration() : 0;
       const currentTime = typeof player.getCurrentTime === "function" ? player.getCurrentTime() : 0;
-      if (!duration || duration <= 0) return;
+      if (!duration || duration <= 0) {
+        return;
+      }
 
       const percent = Math.floor((currentTime / duration) * 100);
-      [25, 50, 75, 100].forEach((milestone) => {
+      [25, 50, 75, 100].forEach(function (milestone) {
         if (percent >= milestone && !firedMilestones.has(milestone)) {
           firedMilestones.add(milestone);
           sendEvent("progress", milestone);
@@ -240,8 +244,8 @@
             maybeTrackProgress(player);
             stopProgressTimer();
           }
-        },
-      },
+        }
+      }
     });
   }
 
