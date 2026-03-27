@@ -170,13 +170,36 @@ def _resolve_shared_item_details(*, shared_item_type: str, shared_item_code: str
     )
     return cluster.code, (clang.name if clang and clang.name else cluster.display_name or cluster.code)
 
+def _effective_logged_in_doctor_id(request: HttpRequest) -> str:
+    session_doctor_id = str(request.session.get("master_doctor_id") or "").strip()
+    if session_doctor_id:
+        return session_doctor_id
 
-def _tracking_audit_user_email() -> str:
-    return str(getattr(settings, "TRACKING_AUDIT_USER_EMAIL", "") or "").strip().lower()
+    doctor = getattr(request.user, "doctor_profile", None)
+    profile_doctor_id = str(getattr(doctor, "doctor_id", "") or "").strip()
 
+    if profile_doctor_id:
+        request.session["master_doctor_id"] = profile_doctor_id
+        request.session["master_login_email"] = getattr(request.user, "email", "") or ""
+        request.session["master_login_role"] = "doctor"
+
+    return profile_doctor_id
+
+
+
+# def _tracking_audit_user_email() -> str:
+#     return str(getattr(settings, "TRACKING_AUDIT_USER_EMAIL", "") or "").strip().lower()
+
+
+# def _is_tracking_audit_user(user) -> bool:
+#     return bool(getattr(user, "is_authenticated", False) and str(getattr(user, "email", "") or "").strip().lower() == _tracking_audit_user_email())
 
 def _is_tracking_audit_user(user) -> bool:
-    return bool(getattr(user, "is_authenticated", False) and str(getattr(user, "email", "") or "").strip().lower() == _tracking_audit_user_email())
+    return bool(
+        getattr(user, "is_authenticated", False)
+        and getattr(user, "is_superuser", False)
+    )
+
 
 
 # -----------------------
@@ -233,8 +256,8 @@ def _fetch_allowed_bundle_codes_for_campaigns(campaign_ids: list[str]) -> set[st
 @ensure_csrf_cookie
 @login_required
 def doctor_share(request: HttpRequest, doctor_id: str) -> HttpResponse:
-    session_doctor_id = request.session.get("master_doctor_id")
-    if not session_doctor_id or session_doctor_id != doctor_id:
+    effective_doctor_id = _effective_logged_in_doctor_id(request)
+    if not effective_doctor_id or effective_doctor_id != doctor_id:
         return HttpResponseForbidden("Not allowed")
 
     row = fetch_master_doctor_row_by_id(doctor_id)
@@ -283,9 +306,6 @@ def doctor_share(request: HttpRequest, doctor_id: str) -> HttpResponse:
     patient_payload = build_patient_link_payload(doctor_ctx, clinic_ctx)
     catalog_json["doctor_payload"] = sign_patient_payload(patient_payload)
 
-    # ------------------------------------------------------------------
-    # Campaign-specific bundle filtering
-    # ------------------------------------------------------------------
     all_campaign_bundle_codes = _fetch_all_campaign_bundle_codes()
 
     allowed_campaign_ids = [
@@ -306,7 +326,6 @@ def doctor_share(request: HttpRequest, doctor_id: str) -> HttpResponse:
             if not bcode:
                 continue
 
-            # keep default bundles OR allowed campaign bundles
             if bcode not in all_campaign_bundle_codes or bcode in allowed_bundle_codes:
                 filtered_bundles.append(b)
                 for vid in (b.get("video_codes") or []):
@@ -315,8 +334,6 @@ def doctor_share(request: HttpRequest, doctor_id: str) -> HttpResponse:
 
         catalog_json["bundles"] = filtered_bundles
 
-        # ✅ CRITICAL FIX:
-        # videos payload uses "id" (video code), not "code".:contentReference[oaicite:4]{index=4}
         if isinstance(catalog_json.get("videos"), list):
             catalog_json["videos"] = [
                 v for v in catalog_json.get("videos", [])
@@ -468,7 +485,7 @@ def patient_cluster(request: HttpRequest, doctor_id: str, cluster_code: str) -> 
 @login_required
 @require_POST
 def create_share_activity(request: HttpRequest) -> HttpResponse:
-    doctor_id = str(request.session.get("master_doctor_id") or "").strip()
+    doctor_id = _effective_logged_in_doctor_id(request)
     if not doctor_id:
         return HttpResponseForbidden("Not allowed")
 
@@ -495,11 +512,13 @@ def create_share_activity(request: HttpRequest) -> HttpResponse:
     doctor_ctx, clinic_ctx = master_row_to_template_context(row)
     doctor_name = str(((doctor_ctx.get("user") or {}).get("full_name")) or "").strip()
     clinic_name = str(clinic_ctx.get("display_name") or "").strip()
+
     shared_item_code, shared_item_name = _resolve_shared_item_details(
         shared_item_type=shared_item_type,
         shared_item_code=shared_item_code,
         language_code=language_code,
     )
+
     recipient_reference = build_anonymized_recipient_reference(
         doctor_id=doctor_id,
         recipient_identifier=recipient_identifier,
@@ -611,9 +630,6 @@ def log_playback_event(request: HttpRequest) -> HttpResponse:
 
 
 def tracking_login(request: HttpRequest) -> HttpResponse:
-    if not _tracking_audit_user_email():
-        return HttpResponseForbidden("Tracking dashboard is not configured.")
-
     if _is_tracking_audit_user(request.user):
         return redirect("sharing:tracking_dashboard")
 
@@ -621,29 +637,24 @@ def tracking_login(request: HttpRequest) -> HttpResponse:
         email = str(request.POST.get("email") or "").strip().lower()
         password = str(request.POST.get("password") or "")
 
-        if email != _tracking_audit_user_email():
-            messages.error(request, "This page is restricted to the tracking viewer account.")
-        else:
-            user = authenticate(request, email=email, password=password)
-            if user is not None:
-                login(request, user)
-                return redirect("sharing:tracking_dashboard")
-            messages.error(request, "Invalid credentials.")
+        user = authenticate(request, email=email, password=password)
+        if user is not None and user.is_superuser:
+            login(request, user)
+            return redirect("sharing:tracking_dashboard")
+
+        messages.error(request, "Only a superuser can access this page.")
 
     return render(
         request,
         "sharing/tracking_login.html",
         {
             "show_auth_links": False,
-            "allowed_email": _tracking_audit_user_email(),
         },
     )
-
-
+   
 @login_required
 def tracking_dashboard(request: HttpRequest) -> HttpResponse:
-    if not _tracking_audit_user_email():
-        return HttpResponseForbidden("Tracking dashboard is not configured.")
+    
     if not _is_tracking_audit_user(request.user):
         return HttpResponseForbidden("Not allowed")
 
