@@ -1,0 +1,161 @@
+form {
+  width: 100%;
+}
+
+label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--color-heading);
+  font-size: 0.94rem;
+  font-weight: 700;
+}
+
+input:not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: #ffffff;
+  color: var(--color-text);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+  appearance: none;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):hover,
+select:hover,
+textarea:hover {
+  border-color: rgba(42, 167, 161, 0.36);
+}
+
+input:not([type="checkbox"]):not([type="radio"]):focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: var(--ring);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #8ca0b2;
+}
+
+textarea {
+  min-height: 132px;
+  resize: vertical;
+}
+
+select {
+  padding-right: 42px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7c93' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  background-size: 16px;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--color-primary);
+}
+
+fieldset {
+  margin: 0;
+  padding: 20px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+legend {
+  padding: 0 10px;
+  color: var(--color-heading);
+  font-weight: 800;
+}
+
+.form-stack {
+  display: grid;
+  gap: 18px;
+}
+
+.form-grid {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.form-grid--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.form-grid--three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.field-group,
+.checkbox-field {
+  display: grid;
+  gap: 8px;
+}
+
+.checkbox-field {
+  align-content: start;
+}
+
+.checkbox-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.generated-form,
+.generated-form p {
+  display: grid;
+  gap: 8px;
+}
+
+.generated-form {
+  gap: 18px;
+}
+
+.generated-form p {
+  margin: 0;
+}
+
+.generated-form br {
+  display: none;
+}
+
+.field-hint,
+.form-note {
+  font-size: 0.92rem;
+  color: var(--color-text-muted);
+}
+
+.errorlist {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 6px;
+  color: var(--color-accent);
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+#id_selected_items_json {
+  display: none;
+}
+
+.video-filter {
+  margin-bottom: 8px;
+}
+
+.toolbar {
+  margin: 4px 0 0;
+}

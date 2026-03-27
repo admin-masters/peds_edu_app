@@ -3,24 +3,29 @@
 {% block header_title %}Publisher{% endblock %}
 
 {% block content %}
-<div class="card">
-  <h2>{% if object %}Edit Bundle Trigger Map{% else %}New Bundle Trigger Map{% endif %}</h2>
-
-  <p style="color:#6b7280; margin-top: 6px;">
-    This updates the bundle's <strong>Trigger</strong>. The doctor share page uses Therapy Area → Trigger → Bundle filtering.
-  </p>
-
-  {% if object %}
-    <div class="card" style="margin: 14px 0; background: #f9fafb;">
-      <strong>Bundle:</strong> {{ object.code }} — {{ object.display_name }}
+<div class="page-shell page-shell--narrow">
+  <section class="card stack-lg">
+    <div class="section-heading__text">
+      <h2>{% if object %}Edit Bundle Trigger Map{% else %}New Bundle Trigger Map{% endif %}</h2>
+      <p class="section-subtitle">
+        This updates the bundle's <strong>Trigger</strong>. The doctor share page uses Therapy Area - Trigger - Bundle filtering.
+      </p>
     </div>
-  {% endif %}
 
-  <form method="post">
-    {% csrf_token %}
-    {{ form.as_p }}
-    <button class="btn" type="submit">Save</button>
-    <a class="btn btn-secondary" href="{% url 'publisher:map_list' %}">Back</a>
-  </form>
+    {% if object %}
+      <div class="read-only-panel">
+        <strong>Bundle:</strong> {{ object.code }} - {{ object.display_name }}
+      </div>
+    {% endif %}
+
+    <form method="post" class="generated-form">
+      {% csrf_token %}
+      {{ form.as_p }}
+      <div class="form-actions">
+        <button class="btn" type="submit">Save</button>
+        <a class="btn btn-secondary" href="{% url 'publisher:map_list' %}">Back</a>
+      </div>
+    </form>
+  </section>
 </div>
 {% endblock %}

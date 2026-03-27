@@ -1,17 +1,25 @@
 {% extends "base.html" %}
 {% block content %}
-  <h2>{% if is_new %}New trigger{% else %}Edit trigger{% endif %}</h2>
+<div class="page-shell page-shell--narrow">
+  <section class="card stack-lg">
+    <div class="section-heading__text">
+      <h2>{% if is_new %}New trigger{% else %}Edit trigger{% endif %}</h2>
+    </div>
 
-  <form method="post">
-    {% csrf_token %}
+    <form method="post" class="generated-form">
+      {% csrf_token %}
 
-    {% if form.non_field_errors %}
-      <div style="color:#b00020;">{{ form.non_field_errors }}</div>
-    {% endif %}
+      {% if form.non_field_errors %}
+        <div class="message error">{{ form.non_field_errors }}</div>
+      {% endif %}
 
-    {{ form.as_p }}
+      {{ form.as_p }}
 
-    <button type="submit">Save</button>
-    <a href="{% url 'publisher:trigger_list' %}" style="margin-left:12px;">Back</a>
-  </form>
+      <div class="form-actions">
+        <button type="submit">Save</button>
+        <a class="btn btn-secondary" href="{% url 'publisher:trigger_list' %}">Back</a>
+      </div>
+    </form>
+  </section>
+</div>
 {% endblock %}

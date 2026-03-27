@@ -3,8 +3,15 @@
 {% block header_title %}Invalid PIN Code{% endblock %}
 
 {% block content %}
-<div class="card">
-  <p>The pincode does not exist in the Indian Pincode directory. Re-enter the pincode.</p>
-  <p><a href="{{ return_url }}">Click here to return to the form</a></p>
+<div class="page-shell page-shell--auth">
+  <section class="card hero-card stack-lg">
+    <div class="section-heading__text">
+      <h2>Invalid PIN Code</h2>
+      <p class="section-subtitle">The pincode does not exist in the Indian Pincode directory. Re-enter the pincode.</p>
+    </div>
+    <div class="form-actions">
+      <a class="btn btn-secondary" href="{{ return_url }}">Return to the form</a>
+    </div>
+  </section>
 </div>
 {% endblock %}

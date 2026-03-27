@@ -4,182 +4,177 @@
 {% block header_title %}Edit Campaign{% endblock %}
 
 {% block content %}
-<div class="card">
-  <h2>Edit Campaign</h2>
-  <p><strong>Campaign ID:</strong> {{ campaign.campaign_id }}</p>
+<div class="page-shell">
+  <section class="card stack-lg">
+    <div class="section-heading__text">
+      <h1>Edit Campaign</h1>
+    </div>
 
-  <div class="muted" style="margin: 14px 0 18px;">
-    <strong>Master-managed fields (read-only):</strong>
-
-    <div style="margin-top: 8px;">
-      <div>
-        <strong>Doctors supported:</strong>
-        {{ readonly.doctors_supported|default_if_none:"—" }}
+    <div class="info-grid">
+      <div class="info-card">
+        <span class="info-card__icon"><svg class="icon icon-lg" aria-hidden="true"><use href="#icon-folder"></use></svg></span>
+        <div>
+          <div class="info-card__label">Campaign ID</div>
+          <div class="info-card__value">{{ campaign.campaign_id }}</div>
+        </div>
       </div>
-
-      <div style="margin-top: 6px;">
-        <strong>Banner click URL:</strong>
-        {% if readonly.banner_target_url %}
-          <a href="{{ readonly.banner_target_url }}" target="_blank" rel="noopener">
-            {{ readonly.banner_target_url }}
-          </a>
-        {% else %}
-          —
-        {% endif %}
+      <div class="info-card">
+        <span class="info-card__icon"><svg class="icon icon-lg" aria-hidden="true"><use href="#icon-user"></use></svg></span>
+        <div>
+          <div class="info-card__label">Doctors supported</div>
+          <div class="info-card__value">{{ readonly.doctors_supported|default_if_none:"-" }}</div>
+        </div>
       </div>
+    </div>
 
-      <div style="margin-top: 10px;">
-        <strong>Campaign banner:</strong>
-        {% if readonly.banner_large_url or readonly.banner_small_url %}
-          <div style="margin-top: 6px;">
-            {% if readonly.banner_target_url %}
-              <a href="{{ readonly.banner_target_url }}" target="_blank" rel="noopener">
-            {% endif %}
+    <div class="read-only-panel stack-md">
+      <strong>Master-managed fields (read-only):</strong>
+
+      <div class="stack-sm">
+        <div>
+          <strong>Banner click URL:</strong>
+          {% if readonly.banner_target_url %}
+            <a href="{{ readonly.banner_target_url }}" target="_blank" rel="noopener">
+              {{ readonly.banner_target_url }}
+            </a>
+          {% else %}
+            -
+          {% endif %}
+        </div>
+
+        <div class="stack-sm">
+          <strong>Campaign banner:</strong>
+          {% if readonly.banner_large_url or readonly.banner_small_url %}
+            <div>
+              {% if readonly.banner_target_url %}
+                <a href="{{ readonly.banner_target_url }}" target="_blank" rel="noopener">
+              {% endif %}
               <picture>
                 {% if readonly.banner_small_url %}
                   <source media="(max-width: 640px)" srcset="{{ readonly.banner_small_url }}">
                 {% endif %}
                 <img
+                  class="campaign-banner"
                   src="{{ readonly.banner_large_url|default:readonly.banner_small_url }}"
                   alt="Campaign banner"
-                  style="max-width: 100%; height: auto; border: 1px solid rgba(0,0,0,0.08); border-radius: 10px;"
                 />
               </picture>
-            {% if readonly.banner_target_url %}</a>{% endif %}
-          </div>
-        {% else %}
-          <div class="muted" style="margin-top: 6px;">
-            No banner URLs found in MASTER DB for this campaign.
-          </div>
-        {% endif %}
-      </div>
-    </div>
-  </div>
-
-  <form method="post">
-    {% csrf_token %}
-
-    {% if form.non_field_errors %}
-      <div class="message error">{{ form.non_field_errors }}</div>
-    {% endif %}
-
-    {{ form.campaign_id }}
-
-    <div style="margin-top: 12px;">
-      <label for="{{ form.new_video_cluster_name.id_for_label }}">
-        {{ form.new_video_cluster_name.label }}
-      </label>
-      {{ form.new_video_cluster_name }}
-      {% if form.new_video_cluster_name.errors %}
-        <div class="message error">{{ form.new_video_cluster_name.errors }}</div>
-      {% endif %}
-    </div>
-
-    {# ✅ NEW: banner_target_url (Project-2 fallback field) #}
-    <div style="margin-top: 14px;">
-      <label for="{{ form.banner_target_url.id_for_label }}">
-        {{ form.banner_target_url.label }}
-      </label>
-      {{ form.banner_target_url }}
-      {% if form.banner_target_url.errors %}
-        <div class="message error">{{ form.banner_target_url.errors }}</div>
-      {% endif %}
-      <div class="muted" style="margin-top: 6px;">
-        Used only if MASTER campaign banner click URL is blank.
+              {% if readonly.banner_target_url %}</a>{% endif %}
+            </div>
+          {% else %}
+            <p class="muted">No banner URLs found in MASTER DB for this campaign.</p>
+          {% endif %}
+        </div>
       </div>
     </div>
 
-    <hr>
-    <h3>Selection</h3>
+    <form method="post" class="form-stack">
+      {% csrf_token %}
 
-    <div style="margin-top: 10px;">
-      <label for="searchInput">Search videos or clusters</label>
-      <input
-        id="searchInput"
-        type="text"
-        placeholder="Type keywords or video/cluster name..."
-        autocomplete="off"
-      />
-    </div>
-
-    <div id="searchResults" style="margin-top: 10px;"></div>
-
-    <div style="margin-top: 16px;">
-      <h4>Selected items</h4>
-      <div id="selectedItems" class="muted">No selections yet.</div>
-    </div>
-
-    {{ form.selected_items_json }}
-
-    <div style="margin-top: 16px;">
-      <h4>Selected videos (expanded)</h4>
-      <div id="expandedVideos" class="muted">Loading...</div>
-      {% if form.selected_items_json.errors %}
-        <div class="message error">{{ form.selected_items_json.errors }}</div>
+      {% if form.non_field_errors %}
+        <div class="message error">{{ form.non_field_errors }}</div>
       {% endif %}
-    </div>
 
-    <hr>
+      {{ form.campaign_id }}
 
-    <div style="margin-top: 14px;">
-      <label for="{{ form.email_registration.id_for_label }}">
-        {{ form.email_registration.label }}
-      </label>
-      {{ form.email_registration }}
-      {% if form.email_registration.errors %}
-        <div class="message error">{{ form.email_registration.errors }}</div>
-      {% endif %}
-    </div>
-
-    <div style="margin-top: 14px;">
-      <label for="{{ form.wa_addition.id_for_label }}">
-        {{ form.wa_addition.label }}
-      </label>
-      {{ form.wa_addition }}
-      {% if form.wa_addition.errors %}
-        <div class="message error">{{ form.wa_addition.errors }}</div>
-      {% endif %}
-    </div>
-
-    <div class="row two" style="margin-top: 14px;">
-      <div>
-        <label for="{{ form.start_date.id_for_label }}">
-          {{ form.start_date.label }}
-        </label>
-        {{ form.start_date }}
-        {% if form.start_date.errors %}
-          <div class="message error">{{ form.start_date.errors }}</div>
+      <div class="field-group">
+        <label for="{{ form.new_video_cluster_name.id_for_label }}">{{ form.new_video_cluster_name.label }}</label>
+        {{ form.new_video_cluster_name }}
+        {% if form.new_video_cluster_name.errors %}
+          <div class="message error">{{ form.new_video_cluster_name.errors }}</div>
         {% endif %}
       </div>
 
-      <div>
-        <label for="{{ form.end_date.id_for_label }}">
-          {{ form.end_date.label }}
-        </label>
-        {{ form.end_date }}
-        {% if form.end_date.errors %}
-          <div class="message error">{{ form.end_date.errors }}</div>
+      <div class="field-group">
+        <label for="{{ form.banner_target_url.id_for_label }}">{{ form.banner_target_url.label }}</label>
+        {{ form.banner_target_url }}
+        {% if form.banner_target_url.errors %}
+          <div class="message error">{{ form.banner_target_url.errors }}</div>
+        {% endif %}
+        <p class="field-hint">Used only if MASTER campaign banner click URL is blank.</p>
+      </div>
+
+      <hr />
+
+      <div class="section-heading__text">
+        <h3>Selection</h3>
+      </div>
+
+      <div class="field-group">
+        <label for="searchInput">Search videos or clusters</label>
+        <input
+          id="searchInput"
+          type="text"
+          placeholder="Type keywords or video or cluster name..."
+          autocomplete="off"
+        />
+      </div>
+
+      <div id="searchResults" class="search-results"></div>
+
+      <div class="selection-panels">
+        <div class="selection-panel stack-sm">
+          <h4>Selected items</h4>
+          <div id="selectedItems" class="muted">No selections yet.</div>
+        </div>
+
+        <div class="selection-panel stack-sm">
+          <h4>Selected videos (expanded)</h4>
+          <div id="expandedVideos" class="muted">Loading...</div>
+          {% if form.selected_items_json.errors %}
+            <div class="message error">{{ form.selected_items_json.errors }}</div>
+          {% endif %}
+        </div>
+      </div>
+
+      {{ form.selected_items_json }}
+
+      <hr />
+
+      <div class="field-group">
+        <label for="{{ form.email_registration.id_for_label }}">{{ form.email_registration.label }}</label>
+        {{ form.email_registration }}
+        {% if form.email_registration.errors %}
+          <div class="message error">{{ form.email_registration.errors }}</div>
         {% endif %}
       </div>
-    </div>
 
-    <div style="margin-top: 18px;">
-      <button type="submit">Save</button>
-      <a
-        class="btn btn-secondary"
-        style="margin-left: 10px;"
-        href="{% url 'campaign_publisher:campaign_list' %}"
-      >
-        Back
-      </a>
-    </div>
-  </form>
+      <div class="field-group">
+        <label for="{{ form.wa_addition.id_for_label }}">{{ form.wa_addition.label }}</label>
+        {{ form.wa_addition }}
+        {% if form.wa_addition.errors %}
+          <div class="message error">{{ form.wa_addition.errors }}</div>
+        {% endif %}
+      </div>
+
+      <div class="form-grid form-grid--two">
+        <div class="field-group">
+          <label for="{{ form.start_date.id_for_label }}">{{ form.start_date.label }}</label>
+          {{ form.start_date }}
+          {% if form.start_date.errors %}
+            <div class="message error">{{ form.start_date.errors }}</div>
+          {% endif %}
+        </div>
+
+        <div class="field-group">
+          <label for="{{ form.end_date.id_for_label }}">{{ form.end_date.label }}</label>
+          {{ form.end_date }}
+          {% if form.end_date.errors %}
+            <div class="message error">{{ form.end_date.errors }}</div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <button type="submit">Save</button>
+        <a class="btn btn-secondary" href="{% url 'campaign_publisher:campaign_list' %}">Back</a>
+      </div>
+    </form>
+  </section>
 </div>
 
-
-
 <script>
-(function() {
+(function () {
   const searchUrl = "{% url 'campaign_publisher:api_search_catalog' %}";
   const expandUrl = "{% url 'campaign_publisher:api_expand_selection' %}";
 
@@ -187,15 +182,14 @@
   const resultsDiv = document.getElementById("searchResults");
   const selectedDiv = document.getElementById("selectedItems");
   const expandedDiv = document.getElementById("expandedVideos");
-
   const hidden = document.getElementById("id_selected_items_json");
 
   function getCookie(name) {
     let cookieValue = null;
     if (document.cookie && document.cookie !== "") {
       const cookies = document.cookie.split(";");
-      for (let i = 0; i < cookies.length; i++) {
-        const cookie = cookies[i].trim();
+      for (let index = 0; index < cookies.length; index += 1) {
+        const cookie = cookies[index].trim();
         if (cookie.substring(0, name.length + 1) === (name + "=")) {
           cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
           break;
@@ -204,42 +198,58 @@
     }
     return cookieValue;
   }
-  const csrftoken = getCookie("csrftoken");
 
+  const csrftoken = getCookie("csrftoken");
   let selectedItems = [];
+
   try {
     selectedItems = JSON.parse(hidden.value || "[]");
-    if (!Array.isArray(selectedItems)) selectedItems = [];
-  } catch(e) {
+    if (!Array.isArray(selectedItems)) {
+      selectedItems = [];
+    }
+  } catch (error) {
     selectedItems = [];
   }
 
-  function syncHidden() { hidden.value = JSON.stringify(selectedItems); }
+  function syncHidden() {
+    hidden.value = JSON.stringify(selectedItems);
+  }
 
   function renderSelectedItems() {
     if (!selectedItems.length) {
       selectedDiv.innerHTML = '<span class="muted">No selections yet.</span>';
       return;
     }
-    const ul = document.createElement("ul");
-    selectedItems.forEach((it, idx) => {
-      const li = document.createElement("li");
-      li.textContent = `${it.type} #${it.id} `;
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.textContent = "Remove";
-      btn.style.marginLeft = "10px";
-      btn.onclick = () => {
-        selectedItems.splice(idx, 1);
+
+    const list = document.createElement("ul");
+    list.className = "selection-list";
+
+    selectedItems.forEach(function (item, index) {
+      const row = document.createElement("li");
+      row.className = "selection-list__item";
+
+      const title = document.createElement("div");
+      title.className = "selection-list__title";
+      title.textContent = item.type + " #" + item.id;
+
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "btn btn-danger btn-sm";
+      button.textContent = "Remove";
+      button.onclick = function () {
+        selectedItems.splice(index, 1);
         syncHidden();
         renderSelectedItems();
         refreshExpandedVideos();
       };
-      li.appendChild(btn);
-      ul.appendChild(li);
+
+      row.appendChild(title);
+      row.appendChild(button);
+      list.appendChild(row);
     });
+
     selectedDiv.innerHTML = "";
-    selectedDiv.appendChild(ul);
+    selectedDiv.appendChild(list);
   }
 
   async function refreshExpandedVideos() {
@@ -250,85 +260,114 @@
 
     expandedDiv.innerHTML = '<span class="muted">Loading...</span>';
 
-    const resp = await fetch(expandUrl, {
+    const response = await fetch(expandUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "X-CSRFToken": csrftoken
       },
-      body: JSON.stringify({items: selectedItems})
+      body: JSON.stringify({ items: selectedItems })
     });
 
-    if (!resp.ok) {
+    if (!response.ok) {
       expandedDiv.innerHTML = '<span class="muted">Unable to expand selection.</span>';
       return;
     }
 
-    const data = await resp.json();
-    const vids = (data && data.videos) ? data.videos : [];
+    const data = await response.json();
+    const videos = (data && data.videos) ? data.videos : [];
 
-    if (!vids.length) {
+    if (!videos.length) {
       expandedDiv.innerHTML = '<span class="muted">No videos found for selection.</span>';
       return;
     }
 
-    const ul = document.createElement("ul");
-    vids.forEach(v => {
-      const li = document.createElement("li");
-      li.textContent = `${v.code}, ${v.title}`;
-      ul.appendChild(li);
+    const list = document.createElement("ul");
+    list.className = "selection-list";
+
+    videos.forEach(function (video) {
+      const row = document.createElement("li");
+      row.className = "selection-list__item";
+
+      const title = document.createElement("div");
+      title.className = "selection-list__title";
+      title.textContent = video.code + ", " + video.title;
+
+      row.appendChild(title);
+      list.appendChild(row);
     });
+
     expandedDiv.innerHTML = "";
-    expandedDiv.appendChild(ul);
+    expandedDiv.appendChild(list);
   }
 
   function addItem(type, id) {
-    const exists = selectedItems.some(x => x.type === type && String(x.id) === String(id));
-    if (exists) return;
-    selectedItems.push({type: type, id: id});
+    const exists = selectedItems.some(function (entry) {
+      return entry.type === type && String(entry.id) === String(id);
+    });
+    if (exists) {
+      return;
+    }
+    selectedItems.push({ type: type, id: id });
     syncHidden();
     renderSelectedItems();
     refreshExpandedVideos();
   }
 
   let debounceTimer = null;
-  searchInput.addEventListener("input", () => {
+  searchInput.addEventListener("input", function () {
     clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(async () => {
-      const q = (searchInput.value || "").trim();
-      if (q.length < 2) { resultsDiv.innerHTML = ""; return; }
+    debounceTimer = setTimeout(async function () {
+      const query = (searchInput.value || "").trim();
+      if (query.length < 2) {
+        resultsDiv.innerHTML = "";
+        return;
+      }
 
-      const resp = await fetch(searchUrl + "?q=" + encodeURIComponent(q));
-      if (!resp.ok) { resultsDiv.innerHTML = '<div class="muted">Search failed.</div>'; return; }
+      const response = await fetch(searchUrl + "?q=" + encodeURIComponent(query));
+      if (!response.ok) {
+        resultsDiv.innerHTML = '<div class="muted">Search failed.</div>';
+        return;
+      }
 
-      const data = await resp.json();
+      const data = await response.json();
       const results = (data && data.results) ? data.results : [];
 
-      if (!results.length) { resultsDiv.innerHTML = '<div class="muted">No matches.</div>'; return; }
+      if (!results.length) {
+        resultsDiv.innerHTML = '<div class="muted">No matches.</div>';
+        return;
+      }
 
       const wrap = document.createElement("div");
-      results.forEach(r => {
+      wrap.className = "search-results";
+
+      results.forEach(function (result) {
         const row = document.createElement("div");
-        row.style.display = "flex";
-        row.style.alignItems = "center";
-        row.style.justifyContent = "space-between";
-        row.style.gap = "12px";
-        row.style.padding = "10px 12px";
-        row.style.border = "1px solid rgba(0,0,0,0.08)";
-        row.style.borderRadius = "10px";
-        row.style.marginBottom = "8px";
+        row.className = "search-result";
 
         const label = document.createElement("div");
-        const kind = (r.type === "cluster") ? "Cluster" : "Video";
-        label.innerHTML = `<strong>[${kind}]</strong> ${r.code} - ${r.title}`;
+        label.className = "search-result__label";
 
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.textContent = "Add";
-        btn.onclick = () => addItem(r.type, r.id);
+        const kind = document.createElement("div");
+        kind.className = "search-result__kind";
+        kind.textContent = "[" + ((result.type === "cluster") ? "Cluster" : "Video") + "]";
+
+        const name = document.createElement("div");
+        name.textContent = result.code + " - " + result.title;
+
+        label.appendChild(kind);
+        label.appendChild(name);
+
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "btn btn-secondary btn-sm";
+        button.textContent = "Add";
+        button.onclick = function () {
+          addItem(result.type, result.id);
+        };
 
         row.appendChild(label);
-        row.appendChild(btn);
+        row.appendChild(button);
         wrap.appendChild(row);
       });
 
@@ -337,11 +376,9 @@
     }, 250);
   });
 
-  // Initial render
   syncHidden();
   renderSelectedItems();
   refreshExpandedVideos();
 })();
 </script>
-
 {% endblock %}

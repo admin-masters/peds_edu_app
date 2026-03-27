@@ -1,73 +1,106 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="card">
-  <h2>Publishing Dashboard</h2>
-  <p class="muted" style="margin-bottom: 24px;">Manage all content for patient education system</p>
-  
-  <div style="display: flex; flex-direction: column; gap: 20px; margin-top: 20px;">
-    <div class="card" style="border: 2px solid var(--border); transition: all 0.3s ease;">
-      <h3 style="color: var(--primary); margin-bottom: 12px;">📚 Content Types</h3>
-      <ul style="list-style: none; padding: 0; margin: 0;">
-        <li style="margin: 8px 0; padding: 8px 0; border-bottom: 1px solid var(--border);">
-          <a href="{% url 'publisher:therapy_list' %}" style="display: flex; align-items: center; gap: 8px; font-weight: 600;">
-            <span style="background: var(--surface-2); padding: 4px 8px; border-radius: 6px; font-size: 0.75rem;">📁</span>
-            Therapy Areas
+<div class="page-shell">
+  <section class="card hero-card stack-lg">
+    <div class="section-heading__text">
+      <h1>Publishing Dashboard</h1>
+      <p class="section-subtitle">Manage all content for the patient education system.</p>
+    </div>
+  </section>
+
+  <section class="link-grid">
+    <div class="card card-hover stack-md">
+      <div class="section-heading__text">
+        <h3>Content Types</h3>
+      </div>
+      <ul class="link-list">
+        <li class="link-list__item">
+          <a class="link-card" href="{% url 'publisher:therapy_list' %}">
+            <span class="link-card__content">
+              <span class="link-card__icon"><svg class="icon icon-lg" aria-hidden="true"><use href="#icon-folder"></use></svg></span>
+              <span class="link-card__title">Therapy Areas</span>
+            </span>
+            <svg class="icon" aria-hidden="true"><use href="#icon-arrow-right"></use></svg>
           </a>
         </li>
-        <li style="margin: 8px 0; padding: 8px 0; border-bottom: 1px solid var(--border);">
-          <a href="{% url 'publisher:triggercluster_list' %}" style="display: flex; align-items: center; gap: 8px; font-weight: 600;">
-            <span style="background: var(--surface-2); padding: 4px 8px; border-radius: 6px; font-size: 0.75rem;">🏷️</span>
-            Trigger Clusters
+        <li class="link-list__item">
+          <a class="link-card" href="{% url 'publisher:triggercluster_list' %}">
+            <span class="link-card__content">
+              <span class="link-card__icon"><svg class="icon icon-lg" aria-hidden="true"><use href="#icon-tag"></use></svg></span>
+              <span class="link-card__title">Trigger Clusters</span>
+            </span>
+            <svg class="icon" aria-hidden="true"><use href="#icon-arrow-right"></use></svg>
           </a>
         </li>
-        <li style="margin: 8px 0; padding: 8px 0;">
-          <a href="{% url 'publisher:trigger_list' %}" style="display: flex; align-items: center; gap: 8px; font-weight: 600;">
-            <span style="background: var(--surface-2); padding: 4px 8px; border-radius: 6px; font-size: 0.75rem;">🎯</span>
-            Triggers
+        <li class="link-list__item">
+          <a class="link-card" href="{% url 'publisher:trigger_list' %}">
+            <span class="link-card__content">
+              <span class="link-card__icon"><svg class="icon icon-lg" aria-hidden="true"><use href="#icon-tag"></use></svg></span>
+              <span class="link-card__title">Triggers</span>
+            </span>
+            <svg class="icon" aria-hidden="true"><use href="#icon-arrow-right"></use></svg>
           </a>
         </li>
       </ul>
     </div>
-    
-    <div class="card" style="border: 2px solid var(--border); transition: all 0.3s ease;">
-      <h3 style="color: var(--primary); margin-bottom: 12px;">🎬 Media & Organization</h3>
-      <ul style="list-style: none; padding: 0; margin: 0;">
-        <li style="margin: 8px 0; padding: 8px 0; border-bottom: 1px solid var(--border);">
-          <a href="{% url 'publisher:video_list' %}" style="display: flex; align-items: center; gap: 8px; font-weight: 600;">
-            <span style="background: var(--surface-2); padding: 4px 8px; border-radius: 6px; font-size: 0.75rem;">📹</span>
-            Videos
+
+    <div class="card card-hover stack-md">
+      <div class="section-heading__text">
+        <h3>Media and Organization</h3>
+      </div>
+      <ul class="link-list">
+        <li class="link-list__item">
+          <a class="link-card" href="{% url 'publisher:video_list' %}">
+            <span class="link-card__content">
+              <span class="link-card__icon"><svg class="icon icon-lg" aria-hidden="true"><use href="#icon-play"></use></svg></span>
+              <span class="link-card__title">Videos</span>
+            </span>
+            <svg class="icon" aria-hidden="true"><use href="#icon-arrow-right"></use></svg>
           </a>
         </li>
-        <li style="margin: 8px 0; padding: 8px 0; border-bottom: 1px solid var(--border);">
-          <a href="{% url 'publisher:cluster_list' %}" style="display: flex; align-items: center; gap: 8px; font-weight: 600;">
-            <span style="background: var(--surface-2); padding: 4px 8px; border-radius: 6px; font-size: 0.75rem;">📦</span>
-            Video Bundles
+        <li class="link-list__item">
+          <a class="link-card" href="{% url 'publisher:cluster_list' %}">
+            <span class="link-card__content">
+              <span class="link-card__icon"><svg class="icon icon-lg" aria-hidden="true"><use href="#icon-layers"></use></svg></span>
+              <span class="link-card__title">Video Bundles</span>
+            </span>
+            <svg class="icon" aria-hidden="true"><use href="#icon-arrow-right"></use></svg>
           </a>
         </li>
-        <li style="margin: 8px 0; padding: 8px 0;">
-          <a href="{% url 'publisher:map_list' %}" style="display: flex; align-items: center; gap: 8px; font-weight: 600;">
-            <span style="background: var(--surface-2); padding: 4px 8px; border-radius: 6px; font-size: 0.75rem;">🗺️</span>
-            Bundle Trigger Maps
+        <li class="link-list__item">
+          <a class="link-card" href="{% url 'publisher:map_list' %}">
+            <span class="link-card__content">
+              <span class="link-card__icon"><svg class="icon icon-lg" aria-hidden="true"><use href="#icon-map"></use></svg></span>
+              <span class="link-card__title">Bundle Trigger Maps</span>
+            </span>
+            <svg class="icon" aria-hidden="true"><use href="#icon-arrow-right"></use></svg>
           </a>
         </li>
       </ul>
     </div>
-  </div>
-  
-  <div class="card" style="margin-top: 24px; background: linear-gradient(135deg, var(--surface-2), transparent);">
-    <h3 style="margin-bottom: 12px;">🚀 Quick Actions</h3>
-    <div class="row three" style="gap: 16px; margin-top: 16px;">
-      <a href="{% url 'publisher:video_create' %}" class="btn" style="width: 100%; justify-content: center;">
-        ➕ Add New Video
-      </a>
-      <a href="{% url 'publisher:cluster_create' %}" class="btn btn-secondary" style="width: 100%; justify-content: center;">
-        📦 Create Bundle
-      </a>
-      <a href="{% url 'publisher:map_create' %}" class="btn btn-secondary" style="width: 100%; justify-content: center;">
-        🗺️ Create Map
-      </a>
+  </section>
+
+  <section class="card hero-card stack-lg">
+    <div class="section-heading__text">
+      <h3>Quick Actions</h3>
     </div>
-  </div>
+    <div class="action-tile-grid">
+      <div class="action-tile">
+        <span class="action-tile__icon"><svg class="icon icon-lg" aria-hidden="true"><use href="#icon-play"></use></svg></span>
+        <div class="action-tile__title">Add New Video</div>
+        <a href="{% url 'publisher:video_create' %}" class="btn btn-block">Add New Video</a>
+      </div>
+      <div class="action-tile">
+        <span class="action-tile__icon"><svg class="icon icon-lg" aria-hidden="true"><use href="#icon-layers"></use></svg></span>
+        <div class="action-tile__title">Create Bundle</div>
+        <a href="{% url 'publisher:cluster_create' %}" class="btn btn-secondary btn-block">Create Bundle</a>
+      </div>
+      <div class="action-tile">
+        <span class="action-tile__icon"><svg class="icon icon-lg" aria-hidden="true"><use href="#icon-map"></use></svg></span>
+        <div class="action-tile__title">Create Map</div>
+        <a href="{% url 'publisher:map_create' %}" class="btn btn-secondary btn-block">Create Map</a>
+      </div>
+    </div>
+  </section>
 </div>
 {% endblock %}
-

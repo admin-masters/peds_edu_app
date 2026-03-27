@@ -3,32 +3,36 @@
 {% block header_title %}Doctor Login{% endblock %}
 
 {% block content %}
-<div class="card">
-  <h2>Login</h2>
-  <p class="muted">Use the same email address you used during doctor registration.</p>
-
-  <form method="post">
-    {% csrf_token %}
-    {% for field in form %}
-      <label for="{{ field.id_for_label }}">{{ field.label }}</label>
-      {{ field }}
-      {% if field.errors %}
-        <div class="message error">{{ field.errors|striptags }}</div>
-      {% endif %}
-    {% endfor %}
-
-    {% if form.non_field_errors %}
-      <div class="message error">{{ form.non_field_errors|striptags }}</div>
-    {% endif %}
-
-    <div style="margin-top: 16px; display: flex; gap: 12px; flex-wrap: wrap;">
-      <button type="submit">Login</button>
-      <a class="btn-secondary" style="padding: 10px 14px; border-radius: 10px; border: 1px solid #111827;" href="{% url 'accounts:request_password_reset' %}">Forgot password</a>
+<div class="page-shell page-shell--auth">
+  <section class="card hero-card stack-lg">
+    <div class="section-heading__text">
+      <h2>Login</h2>
+      <p class="section-subtitle">Use the same email address you used during doctor registration.</p>
     </div>
-  </form>
 
-  <div style="margin-top: 16px;" class="muted">
-    New clinic? <a href="{% url 'accounts:register' %}">Register here</a>
-  </div>
+    <form method="post" class="form-stack">
+      {% csrf_token %}
+
+      {% for field in form %}
+        <div class="field-group">
+          <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+          {{ field }}
+          {% if field.errors %}
+            <div class="message error">{{ field.errors|striptags }}</div>
+          {% endif %}
+        </div>
+      {% endfor %}
+
+      {% if form.non_field_errors %}
+        <div class="message error">{{ form.non_field_errors|striptags }}</div>
+      {% endif %}
+
+      <div class="form-actions">
+        <button type="submit">Login</button>
+        <a class="btn btn-secondary" href="{% url 'accounts:request_password_reset' %}">Forgot password</a>
+      </div>
+    </form>
+
+  </section>
 </div>
 {% endblock %}

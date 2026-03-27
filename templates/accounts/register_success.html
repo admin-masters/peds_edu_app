@@ -3,19 +3,18 @@
 {% block title %}Registration Complete{% endblock %}
 
 {% block content %}
-<div class="card">
-    <h2>Registration Complete</h2>
-
-    <p>
-        We have sent the credentials and clinic link to the doctor via email.
+<div class="page-shell page-shell--auth">
+  <section class="card hero-card stack-lg">
+    <div class="section-heading__text">
+      <h2>Registration Complete</h2>
+      <p class="section-subtitle">We have sent the credentials and clinic link to the doctor via email.</p>
+    </div>
+    <hr />
+    <p class="muted">
+      Next step:
+      <a href="{% url 'accounts:login' %}">Login</a>
+      (If you have not set a password yet, click "Forgot password" on the login page and follow the instructions.)
     </p>
-
-    <hr style="margin: 18px 0;"/>
-
-    <p>
-        Next step:
-        <a href="{% url 'accounts:login' %}">Login</a>
-        (If you haven't set a password yet, click "Forgot password" on the login page and follow the instructions.)
-    </p>
+  </section>
 </div>
 {% endblock %}

@@ -4,52 +4,91 @@
 {% block header_title %}Campaign Publishing{% endblock %}
 
 {% block content %}
-<div class="card">
-  <h2>Publisher Landing Page</h2>
+<div class="page-shell">
+  <section class="card hero-card stack-lg">
+    <div class="section-heading__text">
+      <h1>Publisher Landing Page</h1>
+      <p class="section-subtitle">
+        Authenticated publisher:
+        <strong>{{ publisher.username }}</strong>
+        {% if publisher.sub %} ({{ publisher.sub }}){% endif %}
+      </p>
+    </div>
 
-  <p class="muted">
-    Authenticated publisher:
-    <strong>{{ publisher.username }}</strong>
-    {% if publisher.sub %} ({{ publisher.sub }}){% endif %}
-  </p>
+    {% if campaign_id %}
+      <div class="badge badge--primary">Campaign ID: {{ campaign_id }}</div>
 
-  {% if campaign_id %}
-    <p><strong>Campaign ID:</strong> {{ campaign_id }}</p>
-
-    {% if campaign_meta %}
-      <div class="card" style="margin-top: 16px;">
-        <h2>Campaign details from Project1</h2>
-        <p><strong>Number of doctors supported:</strong> {{ campaign_meta.num_doctors_supported }}</p>
-        <p><strong>Name:</strong> {{ campaign_meta.name }}</p>
-        <p><strong>Company name:</strong> {{ campaign_meta.company_name }}</p>
-        <p><strong>Contact person:</strong> {{ campaign_meta.contact_person_name }}</p>
-        <p><strong>Contact phone:</strong> {{ campaign_meta.contact_person_phone }}</p>
-        <p><strong>Contact email:</strong> {{ campaign_meta.contact_person_email }}</p>
-      </div>
+      {% if campaign_meta %}
+        <div class="info-grid">
+          <div class="info-card">
+            <span class="info-card__icon"><svg class="icon icon-lg" aria-hidden="true"><use href="#icon-user"></use></svg></span>
+            <div>
+              <div class="info-card__label">Doctors supported</div>
+              <div class="info-card__value">{{ campaign_meta.num_doctors_supported }}</div>
+            </div>
+          </div>
+          <div class="info-card">
+            <span class="info-card__icon"><svg class="icon icon-lg" aria-hidden="true"><use href="#icon-folder"></use></svg></span>
+            <div>
+              <div class="info-card__label">Name</div>
+              <div class="info-card__value">{{ campaign_meta.name }}</div>
+            </div>
+          </div>
+          <div class="info-card">
+            <span class="info-card__icon"><svg class="icon icon-lg" aria-hidden="true"><use href="#icon-building"></use></svg></span>
+            <div>
+              <div class="info-card__label">Company name</div>
+              <div class="info-card__value">{{ campaign_meta.company_name }}</div>
+            </div>
+          </div>
+          <div class="info-card">
+            <span class="info-card__icon"><svg class="icon icon-lg" aria-hidden="true"><use href="#icon-user"></use></svg></span>
+            <div>
+              <div class="info-card__label">Contact person</div>
+              <div class="info-card__value">{{ campaign_meta.contact_person_name }}</div>
+            </div>
+          </div>
+          <div class="info-card">
+            <span class="info-card__icon"><svg class="icon icon-lg" aria-hidden="true"><use href="#icon-phone"></use></svg></span>
+            <div>
+              <div class="info-card__label">Contact phone</div>
+              <div class="info-card__value">{{ campaign_meta.contact_person_phone }}</div>
+            </div>
+          </div>
+          <div class="info-card">
+            <span class="info-card__icon"><svg class="icon icon-lg" aria-hidden="true"><use href="#icon-message"></use></svg></span>
+            <div>
+              <div class="info-card__label">Contact email</div>
+              <div class="info-card__value">{{ campaign_meta.contact_person_email }}</div>
+            </div>
+          </div>
+        </div>
+      {% endif %}
+    {% else %}
+      <p class="section-subtitle">No campaign-id was provided in the link. You can still edit existing campaigns.</p>
     {% endif %}
 
-  {% else %}
-    <p class="muted">
-      No campaign-id was provided in the link. You can still edit existing campaigns.
-    </p>
-  {% endif %}
+    <div class="action-tile-grid">
+      <div class="action-tile">
+        <span class="action-tile__icon"><svg class="icon icon-lg" aria-hidden="true"><use href="#icon-arrow-right"></use></svg></span>
+        <div class="action-tile__title">Add details for this campaign</div>
+        {% if campaign_id %}
+          <a class="btn btn-block" href="{% url 'campaign_publisher:add_campaign_details' %}?campaign-id={{ campaign_id|urlencode }}">
+            Add details for this campaign
+          </a>
+        {% else %}
+          <button class="btn btn-block" disabled>Add details for this campaign</button>
+        {% endif %}
+      </div>
 
-  <div class="row two" style="margin-top: 16px;">
-    <div>
-      {% if campaign_id %}
-        <a class="btn" href="{% url 'campaign_publisher:add_campaign_details' %}?campaign-id={{ campaign_id|urlencode }}">
-          Add details for this campaign
+      <div class="action-tile">
+        <span class="action-tile__icon"><svg class="icon icon-lg" aria-hidden="true"><use href="#icon-chart"></use></svg></span>
+        <div class="action-tile__title">Edit existing campaigns</div>
+        <a class="btn btn-secondary btn-block" href="{% url 'campaign_publisher:campaign_list' %}">
+          Edit details for any other campaign
         </a>
-      {% else %}
-        <button class="btn" disabled>Add details for this campaign</button>
-      {% endif %}
+      </div>
     </div>
-
-    <div>
-      <a class="btn btn-secondary" href="{% url 'campaign_publisher:campaign_list' %}">
-        Edit details for any other campaign
-      </a>
-    </div>
-  </div>
+  </section>
 </div>
 {% endblock %}

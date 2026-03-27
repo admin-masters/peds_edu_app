@@ -1,0 +1,249 @@
+:root {
+  --color-primary: #2aa7a1;
+  --color-primary-strong: #238d88;
+  --color-primary-soft: #e6f7f5;
+  --color-secondary: #3fb6af;
+  --color-heading: #2f3e9e;
+  --color-accent: #e45757;
+  --color-accent-soft: #fff2f2;
+  --color-info: #2f3e9e;
+  --color-info-soft: #eef1ff;
+  --color-success: #2aa7a1;
+  --color-success-soft: #e7f8f7;
+  --color-warning: #f0a93e;
+  --color-warning-soft: #fff7e7;
+  --color-bg: #f6fafb;
+  --color-card: #ffffff;
+  --color-surface: #ffffff;
+  --color-surface-soft: #f1f8f9;
+  --color-border: #e6eef1;
+  --color-border-strong: #c8d6db;
+  --color-text: #1f2d3d;
+  --color-text-muted: #6b7c93;
+  --shadow-xs: 0 2px 10px rgba(31, 45, 61, 0.04);
+  --shadow-sm: 0 10px 30px rgba(31, 45, 61, 0.06);
+  --shadow-md: 0 18px 45px rgba(31, 45, 61, 0.08);
+  --shadow-lg: 0 26px 60px rgba(31, 45, 61, 0.1);
+  --radius-sm: 10px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --space-1: 8px;
+  --space-2: 16px;
+  --space-3: 24px;
+  --space-4: 32px;
+  --space-5: 48px;
+  --container: 1200px;
+  --ring: 0 0 0 4px rgba(42, 167, 161, 0.16);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 16px;
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: "Inter", "Roboto", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  line-height: 1.6;
+  color: var(--color-text);
+  background:
+    radial-gradient(circle at top right, rgba(63, 182, 175, 0.14), transparent 24rem),
+    radial-gradient(circle at bottom left, rgba(47, 62, 158, 0.08), transparent 22rem),
+    var(--color-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.42), transparent 32%);
+  z-index: -1;
+}
+
+img,
+svg,
+video,
+iframe {
+  display: block;
+  max-width: 100%;
+}
+
+a {
+  color: var(--color-primary);
+  text-decoration: none;
+  transition: color 0.18s ease, opacity 0.18s ease;
+}
+
+a:hover {
+  color: var(--color-primary-strong);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  color: var(--color-heading);
+  line-height: 1.15;
+}
+
+h1 {
+  font-size: clamp(2.25rem, 3vw, 2.625rem);
+  font-weight: 800;
+}
+
+h2 {
+  font-size: clamp(1.75rem, 2.3vw, 2rem);
+  font-weight: 800;
+}
+
+h3 {
+  font-size: clamp(1.375rem, 1.8vw, 1.5rem);
+  font-weight: 700;
+}
+
+h4 {
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+
+p {
+  margin: 0;
+}
+
+ul,
+ol {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+li + li {
+  margin-top: 0.35rem;
+}
+
+hr {
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  margin: var(--space-3) 0;
+}
+
+code,
+.mono {
+  font-family: ui-monospace, SFMono-Regular, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+::selection {
+  background: rgba(42, 167, 161, 0.18);
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.svg-sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+.muted {
+  color: var(--color-text-muted);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.stack-xs,
+.stack-sm,
+.stack-md,
+.stack-lg {
+  display: grid;
+}
+
+.stack-xs {
+  gap: var(--space-1);
+}
+
+.stack-sm {
+  gap: 12px;
+}
+
+.stack-md {
+  gap: var(--space-2);
+}
+
+.stack-lg {
+  gap: var(--space-3);
+}
+
+.text-center {
+  text-align: center;
+}
+
+.text-right {
+  text-align: right;
+}
+
+.i18n-text.i18n-hi,
+.i18n-text.i18n-mr {
+  font-family: "Noto Sans Devanagari", "Mangal", "Kohinoor Devanagari", sans-serif;
+}
+
+.i18n-text.i18n-bn {
+  font-family: "Noto Sans Bengali", "Nirmala UI", "Lohit Bengali", sans-serif;
+}
+
+.i18n-text.i18n-ta {
+  font-family: "Noto Sans Tamil", "Nirmala UI", "Lohit Tamil", sans-serif;
+}
+
+.i18n-text.i18n-te {
+  font-family: "Noto Sans Telugu", "Nirmala UI", "Lohit Telugu", sans-serif;
+}
+
+.i18n-text.i18n-kn {
+  font-family: "Noto Sans Kannada", "Nirmala UI", "Lohit Kannada", sans-serif;
+}
+
+.i18n-text.i18n-ml {
+  font-family: "Noto Sans Malayalam", "Nirmala UI", "Lohit Malayalam", sans-serif;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

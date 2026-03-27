@@ -3,59 +3,73 @@
 {% block header_title %}Patient Education{% endblock %}
 
 {% block content %}
-<div class="card">
-  <h2>{% if object %}Edit Video{% else %}Add Video{% endif %}</h2>
+<div class="page-shell">
+  <section class="card stack-lg">
+    <div class="section-heading__text">
+      <h1>{% if object %}Edit Video{% else %}Add Video{% endif %}</h1>
+      <p class="section-subtitle">
+        Note: A video cannot exist standalone. It must be part of at least one bundle or cluster.
+        If the required bundle does not exist yet, create it first and then return here.
+        <a href="{% url 'publisher:cluster_create' %}">Create Bundle</a>
+        <a href="{% url 'publisher:cluster_list' %}">View Bundles</a>
+      </p>
+    </div>
 
-  <p style="margin-top: 6px; color: #6b7280;">
-    Note: A video cannot exist standalone. It must be part of at least one bundle/cluster.
-    If the required bundle does not exist yet, create it first and then return here.
-    <a href="{% url 'publisher:cluster_create' %}" style="margin-left: 8px;">+ Create Bundle</a>
-    <a href="{% url 'publisher:cluster_list' %}" style="margin-left: 8px;">View Bundles</a>
-  </p>
-
-  {% if object %}
-    <div class="card" style="margin: 14px 0; background: #f9fafb;">
-      <strong>Bundles this video is part of:</strong>
-      <div style="margin-top: 8px;">
+    {% if object %}
+      <div class="read-only-panel stack-sm">
+        <strong>Bundles this video is part of:</strong>
         {% if object.clusters.all %}
-          <ul style="margin: 0; padding-left: 18px;">
+          <ul class="list-reset">
             {% for b in object.clusters.all %}
-              <li>{{ b.code }} — {{ b.display_name }}</li>
+              <li>{{ b.code }} - {{ b.display_name }}</li>
             {% endfor %}
           </ul>
         {% else %}
-          <span style="color: #6b7280;">None</span>
+          <p class="muted">None</p>
         {% endif %}
-      </div>
-    </div>
-  {% endif %}
-
-  <form method="post">
-    {% csrf_token %}
-    {{ formset.management_form }}
-
-    {% if formset.non_form_errors %}
-      <div class="card" style="margin: 12px 0; background: #fef2f2; border: 1px solid #fecaca;">
-        {{ formset.non_form_errors }}
       </div>
     {% endif %}
 
-    {{ form.as_p }}
+    <form method="post" class="generated-form">
+      {% csrf_token %}
+      {{ formset.management_form }}
 
-    <h3>Language Details (all languages required)</h3>
-    <table class="table">
-      <tr><th>Language Code</th><th>Title</th><th>YouTube URL</th></tr>
-      {% for f in formset.forms %}
-      <tr>
-        <td>{% for hidden in f.hidden_fields %}{{ hidden }}{% endfor %}{{ f.language_code }}</td>
-        <td>{{ f.title }}</td>
-        <td>{{ f.youtube_url }}</td>
-      </tr>
-      {% endfor %}
-    </table>
+      {% if formset.non_form_errors %}
+        <div class="message error">{{ formset.non_form_errors }}</div>
+      {% endif %}
 
-    <button class="btn" type="submit">Save</button>
-    <a class="btn btn-secondary" href="{% url 'publisher:video_list' %}">Back</a>
-  </form>
+      {{ form.as_p }}
+
+      <div class="section-heading__text">
+        <h3>Language Details (all languages required)</h3>
+      </div>
+
+      <div class="table-card">
+        <table>
+          <thead>
+            <tr>
+              <th>Language Code</th>
+              <th>Title</th>
+              <th>YouTube URL</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for f in formset.forms %}
+              <tr>
+                <td>{% for hidden in f.hidden_fields %}{{ hidden }}{% endfor %}{{ f.language_code }}</td>
+                <td>{{ f.title }}</td>
+                <td>{{ f.youtube_url }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="form-actions">
+        <button class="btn" type="submit">Save</button>
+        <a class="btn btn-secondary" href="{% url 'publisher:video_list' %}">Back</a>
+      </div>
+    </form>
+  </section>
 </div>
 {% endblock %}

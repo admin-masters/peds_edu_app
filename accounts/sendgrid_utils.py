@@ -4,6 +4,7 @@ import hashlib
 import html as html_lib
 import json
 import os
+import re
 import smtplib
 import socket
 import ssl
@@ -19,6 +20,7 @@ from django.conf import settings
 from peds_edu.aws_secrets import get_last_error, get_secret_string
 
 SENDGRID_API_URL = "https://api.sendgrid.com/v3/mail/send"
+_URL_RE = re.compile(r"https?://[^\s<>\"]+")
 
 
 def _truncate(s: str, limit: int = 12000) -> str:
@@ -196,6 +198,173 @@ def _resolve_from_email(from_email: Optional[str] = None) -> str:
     return "no-reply@example.com"
 
 
+def _split_email_blocks(text: str) -> list[str]:
+    lines = (text or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    blocks: list[str] = []
+    current: list[str] = []
+
+    for line in lines:
+        cleaned = line.strip()
+        if cleaned:
+            current.append(cleaned)
+            continue
+        if current:
+            blocks.append("\n".join(current))
+            current = []
+
+    if current:
+        blocks.append("\n".join(current))
+
+    return blocks
+
+
+def _extract_block_url(block: str) -> Optional[str]:
+    candidate = (block or "").strip()
+    match = _URL_RE.fullmatch(candidate)
+    if not match:
+        return None
+    return match.group(0)
+
+
+def _strip_url_punctuation(url: str) -> tuple[str, str]:
+    clean = url or ""
+    trailing = ""
+    while clean and clean[-1] in ".,);":
+        trailing = clean[-1] + trailing
+        clean = clean[:-1]
+    return clean, trailing
+
+
+def _linkify_text(text: str) -> str:
+    rendered: list[str] = []
+    cursor = 0
+
+    for match in _URL_RE.finditer(text or ""):
+        raw_url = match.group(0)
+        clean_url, trailing = _strip_url_punctuation(raw_url)
+        rendered.append(html_lib.escape((text or "")[cursor:match.start()]))
+        rendered.append(
+            '<a href="{href}" style="color:#2AA7A1;text-decoration:none;font-weight:700;">{label}</a>{tail}'.format(
+                href=html_lib.escape(clean_url, quote=True),
+                label=html_lib.escape(clean_url),
+                tail=html_lib.escape(trailing),
+            )
+        )
+        cursor = match.start() + len(raw_url)
+
+    rendered.append(html_lib.escape((text or "")[cursor:]))
+    return "".join(rendered)
+
+
+def _render_email_button(url: str) -> str:
+    safe_url = html_lib.escape(url, quote=True)
+    return (
+        '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 18px;">'
+        '<tr>'
+        '<td>'
+        '<a href="{href}" style="display:inline-block;padding:12px 18px;border-radius:10px;'
+        'background:#2AA7A1;color:#ffffff;font-family:Inter,Roboto,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;'
+        'font-size:15px;font-weight:700;line-height:1;text-decoration:none;">Open link</a>'
+        "</td>"
+        "</tr>"
+        "</table>"
+    ).format(href=safe_url)
+
+
+def _render_email_password_block(label: str, value: str) -> str:
+    return (
+        '<div style="margin:0 0 18px;padding:16px 18px;border:1px solid #E6EEF1;border-radius:12px;'
+        'background:#F6FAFB;">'
+        '<div style="margin:0 0 6px;color:#6B7C93;font-family:Inter,Roboto,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;'
+        'font-size:12px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;">{label}</div>'
+        '<div style="color:#1F2D3D;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,Liberation Mono,monospace;'
+        'font-size:16px;font-weight:700;line-height:1.5;">{value}</div>'
+        "</div>"
+    ).format(label=html_lib.escape(label), value=html_lib.escape(value))
+
+
+def _build_styled_email_html(subject: str, plain_text: str) -> str:
+    blocks = _split_email_blocks(plain_text)
+    sections: list[str] = []
+    index = 0
+
+    while index < len(blocks):
+        block = blocks[index]
+        lines = [line.strip() for line in block.split("\n") if line.strip()]
+        single_url = _extract_block_url(block)
+
+        if (
+            len(lines) == 1
+            and lines[0].endswith(":")
+            and index + 1 < len(blocks)
+            and _extract_block_url(blocks[index + 1])
+        ):
+            sections.append(
+                '<p style="margin:0 0 10px;color:#1F2D3D;font-family:Inter,Roboto,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;'
+                'font-size:16px;line-height:1.65;">{text}</p>'.format(text=_linkify_text(lines[0]))
+            )
+            sections.append(_render_email_button(_extract_block_url(blocks[index + 1]) or ""))
+            index += 2
+            continue
+
+        if single_url:
+            sections.append(_render_email_button(single_url))
+            index += 1
+            continue
+
+        if len(lines) == 1 and ":" in lines[0]:
+            label, value = lines[0].split(":", 1)
+            if label.strip().lower() in {"password", "temporary password"} and value.strip():
+                sections.append(_render_email_password_block(label.strip(), value.strip()))
+                index += 1
+                continue
+
+        sections.append(
+            '<p style="margin:0 0 18px;color:#1F2D3D;font-family:Inter,Roboto,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;'
+            'font-size:16px;line-height:1.7;">{text}</p>'.format(
+                text="<br />".join(_linkify_text(line) for line in lines)
+            )
+        )
+        index += 1
+
+    body_html = "".join(sections) or (
+        '<p style="margin:0;color:#1F2D3D;font-family:Inter,Roboto,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;'
+        'font-size:16px;line-height:1.7;">&nbsp;</p>'
+    )
+
+    return (
+        "<!doctype html>"
+        '<html lang="en">'
+        "<head>"
+        '<meta charset="utf-8" />'
+        '<meta name="viewport" content="width=device-width, initial-scale=1.0" />'
+        '<title>{title}</title>'
+        "</head>"
+        '<body style="margin:0;padding:0;background:#F6FAFB;">'
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;background:#F6FAFB;border-collapse:collapse;">'
+        "<tr>"
+        '<td align="center" style="padding:32px 16px;">'
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:680px;width:100%;background:#FFFFFF;border:1px solid #E6EEF1;border-radius:18px;border-collapse:separate;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,0.05);">'
+        "<tr>"
+        '<td style="height:8px;background:#2AA7A1;font-size:0;line-height:0;">&nbsp;</td>'
+        "</tr>"
+        "<tr>"
+        '<td style="padding:32px 32px 8px;">'
+        '<h1 style="margin:0;color:#2F3E9E;font-family:Inter,Roboto,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;font-size:30px;line-height:1.2;font-weight:800;">{heading}</h1>'
+        "</td>"
+        "</tr>"
+        "<tr>"
+        '<td style="padding:8px 32px 32px;">{body}</td>'
+        "</tr>"
+        "</table>"
+        "</td>"
+        "</tr>"
+        "</table>"
+        "</body>"
+        "</html>"
+    ).format(title=html_lib.escape(subject or "Patient Education"), heading=html_lib.escape(subject or "Patient Education"), body=body_html)
+
+
 def _get_backend_mode() -> str:
     v = str(getattr(settings, "EMAIL_BACKEND_MODE", "") or "").strip().lower()
     if v in ("sendgrid", "smtp", "console"):
@@ -267,7 +436,7 @@ def _send_via_sendgrid_api(
     if not candidates:
         return False, None, json.dumps(diag_base), "No SendGrid API key candidates found"
 
-    safe_html = "<pre>" + html_lib.escape(plain_text or "") + "</pre>"
+    safe_html = _build_styled_email_html(subject, plain_text or "")
 
     payload = {
         "personalizations": [{"to": [{"email": e} for e in to_emails]}],
@@ -395,6 +564,7 @@ def _send_via_smtp(
     msg["From"] = from_email
     msg["To"] = ", ".join(to_emails)
     msg.set_content(plain_text or "")
+    msg.add_alternative(_build_styled_email_html(subject, plain_text or ""), subtype="html")
 
     try:
         if use_ssl:
