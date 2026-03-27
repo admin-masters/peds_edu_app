@@ -240,9 +240,24 @@ def _fetch_allowed_bundle_codes_for_campaigns(campaign_ids: list[str]) -> set[st
 @ensure_csrf_cookie
 @login_required
 def doctor_share(request: HttpRequest, doctor_id: str) -> HttpResponse:
-    session_doctor_id = request.session.get("master_doctor_id")
-    if not session_doctor_id or session_doctor_id != doctor_id:
+    session_doctor_id = str(request.session.get("master_doctor_id") or "").strip()
+
+    profile_doctor_id = ""
+    try:
+        profile_doctor_id = str(request.user.doctor_profile.doctor_id or "").strip()
+    except Exception:
+        profile_doctor_id = ""
+
+    effective_doctor_id = session_doctor_id or profile_doctor_id
+
+    if not effective_doctor_id or effective_doctor_id != doctor_id:
         return HttpResponseForbidden("Not allowed")
+
+    if not session_doctor_id and profile_doctor_id == doctor_id:
+        request.session["master_doctor_id"] = doctor_id
+        request.session["master_login_email"] = getattr(request.user, "email", "") or ""
+        request.session["master_login_role"] = "doctor"
+
 
     row = fetch_master_doctor_row_by_id(doctor_id)
     if not row:
