@@ -8,7 +8,7 @@
     <div class="section-heading">
       <div class="section-heading__text">
         <h1>Share Activity Overview</h1>
-        <p class="section-subtitle">Doctor-level share counts, recipient references, and video playback milestones.</p>
+        <p class="section-subtitle">Doctor-level share counts, banner engagement, recipient references, and video playback milestones.</p>
       </div>
       <a class="btn btn-secondary" href="{% url 'sharing:tracking_logout' %}">Logout</a>
     </div>
@@ -35,6 +35,13 @@
         <span class="stat-card__icon"><svg class="icon icon-lg" aria-hidden="true"><use href="#icon-play"></use></svg></span>
       </div>
       <div class="stat-card__value">{{ stats.playback_event_count }}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-card__header">
+        <span class="stat-card__label">Banner clicks</span>
+        <span class="stat-card__icon"><svg class="icon icon-lg" aria-hidden="true"><use href="#icon-tag"></use></svg></span>
+      </div>
+      <div class="stat-card__value">{{ stats.banner_click_count }}</div>
     </div>
     <div class="stat-card">
       <div class="stat-card__header">
@@ -145,6 +152,40 @@
             </tr>
           {% empty %}
             <tr><td class="table-empty" colspan="7">No playback events available.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card stack-md">
+    <div class="section-heading__text">
+      <h3>Recent Banner Clicks</h3>
+    </div>
+    <div class="table-card">
+      <table>
+        <thead>
+          <tr>
+            <th>When</th>
+            <th>Doctor ID</th>
+            <th>Page type</th>
+            <th>Banner ID</th>
+            <th>Banner</th>
+            <th>Target URL</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in recent_banner_clicks %}
+            <tr>
+              <td>{{ row.clicked_at|date:"Y-m-d H:i" }}</td>
+              <td>{{ row.doctor_id }}</td>
+              <td>{{ row.page_type }}</td>
+              <td class="mono">{{ row.banner_id|default:"-" }}</td>
+              <td>{{ row.banner_name|default:"-" }}</td>
+              <td class="mono">{{ row.banner_target_url|default:"-" }}</td>
+            </tr>
+          {% empty %}
+            <tr><td class="table-empty" colspan="6">No banner click events available.</td></tr>
           {% endfor %}
         </tbody>
       </table>
