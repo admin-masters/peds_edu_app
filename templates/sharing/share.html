@@ -181,6 +181,10 @@
                 <a
                   class="banner-link"
                   href="{{ c.banner_target_url }}"
+                  data-banner-trackable="1"
+                  data-banner-id="{{ c.campaign_id|default:'' }}"
+                  data-banner-name="{{ c.brand|default:c.video_cluster|default:'Campaign banner' }}"
+                  data-banner-target-url="{{ c.banner_target_url|default:'' }}"
                   target="_blank"
                   rel="noopener noreferrer"
                 >
@@ -196,7 +200,13 @@
                   </picture>
                 </a>
               {% else %}
-                <div class="banner-link">
+                <div
+                  class="banner-link"
+                  data-banner-trackable="1"
+                  data-banner-id="{{ c.campaign_id|default:'' }}"
+                  data-banner-name="{{ c.brand|default:c.video_cluster|default:'Campaign banner' }}"
+                  data-banner-target-url=""
+                >
                   <picture>
                     {% if c.banner_small_url %}
                       <source media="(max-width: 640px)" srcset="{{ c.banner_small_url }}" />
@@ -233,6 +243,13 @@
 <script>
 const catalog = JSON.parse(document.getElementById("catalog-json").textContent);
 const createShareActivityUrl = "{% url 'sharing:create_share_activity' %}";
+const logBannerClickUrl = "{% url 'sharing:log_banner_click' %}";
+const bannerTrackingContext = {
+  doctorId: "{{ doctor.doctor_id|escapejs }}",
+  doctorName: "{{ doctor.user.full_name|escapejs }}",
+  clinicName: "{{ doctor.clinic.display_name|escapejs }}",
+  pageType: "{{ banner_page_type|escapejs }}"
+};
 
 const therapySel = document.getElementById("therapySel");
 const triggerSel = document.getElementById("triggerSel");
@@ -887,6 +904,42 @@ function queueShareActivity(payload) {
     body: JSON.stringify(payload)
   }).catch(function () {});
 }
+
+function queueBannerClick(payload) {
+  const csrfToken = getCookie("csrftoken");
+  if (!window.fetch || !csrfToken) {
+    return;
+  }
+
+  fetch(logBannerClickUrl, {
+    method: "POST",
+    credentials: "same-origin",
+    keepalive: true,
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRFToken": csrfToken
+    },
+    body: JSON.stringify(payload)
+  }).catch(function () {});
+}
+
+document.querySelectorAll("[data-banner-trackable='1']").forEach(function (banner, index) {
+  banner.addEventListener("click", function () {
+    const bannerId = (banner.dataset.bannerId || "").trim();
+    const bannerName = (banner.dataset.bannerName || "").trim() || "Campaign banner";
+    const bannerTargetUrl = (banner.dataset.bannerTargetUrl || "").trim();
+
+    queueBannerClick({
+      doctor_id: bannerTrackingContext.doctorId,
+      doctor_name: bannerTrackingContext.doctorName,
+      clinic_name: bannerTrackingContext.clinicName,
+      page_type: bannerTrackingContext.pageType,
+      banner_id: bannerId || "banner-" + String(index + 1),
+      banner_name: bannerName,
+      banner_target_url: bannerTargetUrl
+    });
+  });
+});
 
 shareVideoBtn.onclick = function () {
   if (!activeVideo) {
