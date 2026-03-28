@@ -111,6 +111,38 @@ class SharePlaybackEvent(models.Model):
         return f"{self.doctor_id} {self.event_type} {self.video_code}"
 
 
+class ShareBannerClickEvent(models.Model):
+    class PageType(models.TextChoices):
+        DOCTOR = "doctor", "Doctor"
+        CLINIC = "clinic", "Clinic"
+
+    doctor_summary = models.ForeignKey(
+        DoctorShareSummary,
+        on_delete=models.CASCADE,
+        related_name="banner_clicks",
+    )
+    doctor_id = models.CharField(max_length=32, db_index=True)
+    page_type = models.CharField(
+        max_length=20,
+        choices=PageType.choices,
+        db_index=True,
+    )
+    banner_id = models.CharField(max_length=80, blank=True, default="", db_index=True)
+    banner_name = models.CharField(max_length=255, blank=True, default="")
+    banner_target_url = models.URLField(max_length=500, blank=True, default="")
+    clicked_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-clicked_at"]
+        indexes = [
+            models.Index(fields=["doctor_id", "clicked_at"], name="sharing_banner_doctor_time_idx"),
+            models.Index(fields=["banner_id", "clicked_at"], name="sharing_banner_id_time_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.doctor_id} {self.page_type} {self.banner_name or self.banner_id}"
+
+
 def normalize_recipient_identifier(raw_value: str) -> str:
     digits = re.sub(r"\D", "", str(raw_value or ""))
     if digits:
@@ -129,4 +161,3 @@ def build_anonymized_recipient_reference(*, doctor_id: str, recipient_identifier
         hashlib.sha256,
     ).hexdigest()
     return f"v1_{digest}"
-

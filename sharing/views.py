@@ -29,6 +29,7 @@ from peds_edu.master_db import (
 from .models import (
     DoctorShareSummary,
     ShareActivity,
+    ShareBannerClickEvent,
     SharePlaybackEvent,
     build_anonymized_recipient_reference,
 )
@@ -266,6 +267,8 @@ def doctor_share(request: HttpRequest, doctor_id: str) -> HttpResponse:
 
     doctor_ctx, clinic_ctx = master_row_to_template_context(row)
     doctor_name = ((doctor_ctx.get("user") or {}).get("full_name") or "").strip()
+    login_role = str(request.session.get("master_login_role") or "").strip().lower()
+    banner_page_type = "doctor" if login_role == "doctor" else "clinic"
 
     login_email = (getattr(request.user, "email", "") or "").strip()
     doctor_email = ((doctor_ctx.get("user") or {}).get("email") or "").strip()
@@ -349,6 +352,7 @@ def doctor_share(request: HttpRequest, doctor_id: str) -> HttpResponse:
             "catalog_json": catalog_json,
             "languages": LANGUAGES,
             "show_modify_clinic_details": False,
+            "banner_page_type": banner_page_type,
             "pe_campaign_support": pe_campaign_support,
         },
     )
@@ -629,6 +633,48 @@ def log_playback_event(request: HttpRequest) -> HttpResponse:
     return JsonResponse({"ok": True})
 
 
+@login_required
+@require_POST
+def log_banner_click(request: HttpRequest) -> HttpResponse:
+    doctor_id = str(request.session.get("master_doctor_id") or "").strip()
+    if not doctor_id:
+        return HttpResponseForbidden("Not allowed")
+
+    payload = _parse_json_body(request)
+    payload_doctor_id = str(payload.get("doctor_id") or "").strip()
+    if payload_doctor_id and payload_doctor_id != doctor_id:
+        return HttpResponseForbidden("Not allowed")
+
+    page_type = str(payload.get("page_type") or "").strip().lower()
+    banner_id = str(payload.get("banner_id") or "").strip()
+    banner_name = str(payload.get("banner_name") or "").strip()
+    banner_target_url = str(payload.get("banner_target_url") or "").strip()
+    doctor_name = str(payload.get("doctor_name") or "").strip()
+    clinic_name = str(payload.get("clinic_name") or "").strip()
+
+    if page_type not in ShareBannerClickEvent.PageType.values:
+        return JsonResponse({"ok": False, "error": "Invalid page_type."}, status=400)
+    if not banner_id and not banner_name:
+        return JsonResponse({"ok": False, "error": "banner_id or banner_name is required."}, status=400)
+
+    summary = _get_or_create_doctor_share_summary(
+        doctor_id=doctor_id,
+        doctor_name=doctor_name,
+        clinic_name=clinic_name,
+    )
+
+    click = ShareBannerClickEvent.objects.create(
+        doctor_summary=summary,
+        doctor_id=doctor_id,
+        page_type=page_type,
+        banner_id=banner_id,
+        banner_name=banner_name,
+        banner_target_url=banner_target_url,
+    )
+
+    return JsonResponse({"ok": True, "click_id": click.pk})
+
+
 def tracking_login(request: HttpRequest) -> HttpResponse:
     if _is_tracking_audit_user(request.user):
         return redirect("sharing:tracking_dashboard")
@@ -661,11 +707,13 @@ def tracking_dashboard(request: HttpRequest) -> HttpResponse:
     summary_rows = DoctorShareSummary.objects.order_by("-total_shares", "doctor_id")
     recent_shares = ShareActivity.objects.select_related("doctor_summary").order_by("-shared_at")[:100]
     recent_playback = SharePlaybackEvent.objects.select_related("doctor_summary", "share").order_by("-occurred_at")[:100]
+    recent_banner_clicks = ShareBannerClickEvent.objects.select_related("doctor_summary").order_by("-clicked_at")[:100]
 
     stats = {
         "doctor_count": summary_rows.count(),
         "share_count": ShareActivity.objects.count(),
         "playback_event_count": SharePlaybackEvent.objects.count(),
+        "banner_click_count": ShareBannerClickEvent.objects.count(),
         "unique_items_shared": ShareActivity.objects.values("shared_item_type", "shared_item_code").distinct().count(),
     }
 
@@ -677,6 +725,7 @@ def tracking_dashboard(request: HttpRequest) -> HttpResponse:
             "summary_rows": summary_rows,
             "recent_shares": recent_shares,
             "recent_playback": recent_playback,
+            "recent_banner_clicks": recent_banner_clicks,
             "show_auth_links": False,
         },
     )
