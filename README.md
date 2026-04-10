@@ -1,153 +1,222 @@
-# Pediatric Patient Education System - New Microsite  (Django + MySQL)1
+# PedsEdu (CPD in Clinic Portal)
 
-This repository contains a working Django application implementing:
-- Doctor registration + clinic whitelabel link delivery (on-screen + email via SendGrid)
-- Email+password authentication (first time: set password via emailed link; includes forgot/reset)
-- Doctor video discovery + WhatsApp sharing screen
-- Public patient pages (single video, or video bundle/cluster) with language selector
-- Admin publishing screens for triggers, videos, clusters, mappings
-- CSV ingestion command for your master data
+Django-based Pediatric Patient Education platform with:
 
-## 1) Prerequisites
+- doctor/clinic authentication against a master DB,
+- multilingual video/bundle sharing over WhatsApp,
+- patient-facing video pages,
+- campaign/publisher workflows via SSO,
+- field-rep assisted doctor onboarding,
+- sharing/playback analytics.
 
-- Ubuntu 22.04+ (or similar)
-- Python 3.10+ (recommended)
-- MySQL 8.x
-- (Recommended in production) Redis
+---
 
-System packages (Ubuntu):
+## Table of Contents
 
-```bash
-sudo apt update
-sudo apt install -y python3 python3-venv python3-pip build-essential default-libmysqlclient-dev pkg-config
+1. [System Snapshot](#1-system-snapshot)
+2. [Architecture](#2-architecture)
+3. [Repository Structure](#3-repository-structure)
+4. [Key Workflows (Indexed)](#4-key-workflows-indexed)
+5. [Local Setup](#5-local-setup)
+6. [Management Commands](#6-management-commands)
+7. [URL Map](#7-url-map)
+8. [Deployment Notes](#8-deployment-notes)
+9. [Current Caveats / Risks](#9-current-caveats--risks)
+
+---
+
+## 1) System Snapshot
+
+### Core apps
+
+- `accounts`: registration/login/password reset + master DB doctor/staff integration.
+- `catalog`: therapy/trigger/video/bundle models and import tooling.
+- `sharing`: doctor share UI, patient pages, tracking APIs/dashboard.
+- `publisher`: campaign module + staff-only catalog CRUD pages.
+- `sso`: JWT consume endpoint for publisher-side SSO.
+
+### Databases
+
+- `default` (portal-owned tables)
+- `master` (external master system data: doctors/enrollment/publisher allowlist/field reps)
+
+### Runtime dependencies
+
+- Django 4.2, MySQL, WhiteNoise, SendGrid SMTP, optional Redis cache.
+
+---
+
+## 2) Architecture
+
+```mermaid
+flowchart LR
+  D[Doctor / Clinic Staff] -->|Login + share| APP[Django App]
+  P[Caregiver] -->|Open patient link| APP
+  PUB[Publisher] -->|SSO token| SSO[/sso/consume/]
+  SSO --> APP
+  FR[Field Rep] -->|Campaign link| APP
+
+  APP --> DB1[(default MySQL)]
+  APP --> DB2[(master MySQL)]
+  APP --> SG[SendGrid]
+  APP --> WA[WhatsApp deeplinks]
+  APP --> YT[YouTube links]
 ```
 
-## 2) Create the MySQL database
+### URL include order at root
 
-```sql
-CREATE DATABASE peds_edu CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER 'peds_edu'@'%' IDENTIFIED BY 'CHANGE_ME_STRONG_PASSWORD';
-GRANT ALL PRIVILEGES ON peds_edu.* TO 'peds_edu'@'%';
-FLUSH PRIVILEGES;
+1. `/admin/`
+2. `/sso/`
+3. campaign routes at root (`publisher.campaign_urls`)
+4. sharing routes at root (`sharing.urls`)
+5. `/accounts/`
+6. `/publisher/` (staff CRUD)
+
+---
+
+## 3) Repository Structure
+
+```text
+peds_edu/      project settings, URL config, shared master DB helpers
+accounts/      doctor auth/onboarding, pincode utilities, SendGrid helpers
+catalog/       taxonomy/content models + CSV importer
+sharing/       share page, patient pages, analytics models/APIs
+publisher/     campaign module + staff CRUD UI
+sso/           HS256 JWT verification and session creation
+templates/     HTML templates
+static/        CSS/JS/icons
+CSV/           import files
+deploy/        deployment examples (nginx/gunicorn/sql)
 ```
 
-## 3) Install and configure the Django app
+---
+
+## 4) Key Workflows (Indexed)
+
+### Flow-01: Doctor login and content sharing
+
+1. User logs in at `/accounts/login/`.
+2. Credentials are verified against master DB (doctor or clinic user columns).
+3. Session stores `master_doctor_id` and login role.
+4. User opens `/clinic/<doctor_id>/share/`.
+5. App builds/enriches catalog payload, injects signed doctor payload, and language-specific WhatsApp message prefixes.
+6. User shares a WhatsApp link to patient video (`/p/<doctor_id>/v/<video_code>/`) or bundle (`/p/<doctor_id>/c/<cluster_code>/`).
+
+### Flow-02: Patient link consumption
+
+1. Caregiver opens shared link.
+2. App validates signed payload and resolves language fallback.
+3. Single video or bundle page is rendered using per-language titles/URLs.
+4. Playback/banner/share tracking APIs capture telemetry events.
+
+### Flow-03: Publisher SSO and campaign setup
+
+1. External system redirects to `/sso/consume/?token=...&campaign_id=...`.
+2. Token is verified (`HS256`, `iss`, `aud`, `exp`).
+3. Session identity and campaign ID are stored.
+4. Publisher uses campaign screens to create/edit campaign-linked bundle and metadata.
+
+### Flow-04: Field rep onboarding
+
+1. Rep opens `/field-rep-landing-page/?campaign-id=...&field_rep_id=...`.
+2. App resolves and validates rep-campaign mapping via master DB.
+3. Rep submits doctor WhatsApp.
+4. Existing doctor: ensure enrollment + route toward sharing message.
+5. New doctor: redirect to registration with campaign-prefilled context.
+
+---
+
+## 5) Local Setup
+
+> **Important:** `peds_edu/settings.py` currently contains hardcoded DB credentials/hosts for both `default` and `master`. `.env` does not fully control DB connectivity in current code.
+
+### Prerequisites
+
+- Python 3.10+
+- MySQL client/build dependencies
 
 ```bash
-cd peds_edu_app
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-# Optional: for transliteration (generates local-script titles)
-# pip install -r requirements-dev.txt
-```
-
-Create your environment file:
-
-```bash
+# optional transliteration engine
+pip install -r requirements-dev.txt
 cp .env.example .env
+set -a && source .env && set +a
 ```
 
-Set values in `.env`:
-- `DJANGO_SECRET_KEY`
-- `DB_*`
-- `APP_BASE_URL` (important: used in SendGrid emails and WhatsApp links)
-- `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL`
-
-Export env vars (or use a process manager to load them):
-
-```bash
-set -a
-source .env
-set +a
-```
-
-Run migrations:
+### Prepare DB and run
 
 ```bash
 python manage.py migrate
-```
-
-Create an admin user:
-
-```bash
 python manage.py createsuperuser
-```
-
-## 4) Import your master CSV data
-
-Copy your CSV files into a folder (example: `/home/ubuntu/master_data/`) with these exact names:
-- `trigger_master.csv`
-- `video_master.csv`
-- `video_cluster_master.csv`
-- `video_cluster_video_master.csv`
-- `video_trigger_map_master.csv`
-
-Run:
-
-```bash
-python manage.py import_master_data --path /home/ubuntu/master_data
-```
-
-> Note: If you install `ai4bharat-transliteration`, the importer will generate local-script (transliterated) titles for the 8 languages. Otherwise, titles remain English.
-
-## 5) Publish videos/clusters (so doctors can share)
-
-The doctor share UI shows only `is_published=True` items.
-
-You can publish from Django admin:
-- `/admin/` → Videos → set **is_published**
-- `/admin/` → Video Clusters → set **is_published**
-
-For quick testing you can publish all via MySQL:
-
-```sql
-UPDATE catalog_video SET is_published = 1;
-UPDATE catalog_videocluster SET is_published = 1;
-```
-
-## 6) Run locally
-
-```bash
+python manage.py import_master_data --path ./CSV
 python manage.py runserver 0.0.0.0:8000
 ```
 
-Open:
-- Doctor registration: `http://localhost:8000/accounts/register/`
-- Doctor login: `http://localhost:8000/accounts/login/`
-- Admin: `http://localhost:8000/admin/`
+---
 
-## 7) Production deployment (Gunicorn + Nginx)
+## 6) Management Commands
 
-### Gunicorn
+- `python manage.py import_master_data --path <dir>`
+  - Requires exact CSV names:
+    - `trigger_master.csv`
+    - `video_master.csv`
+    - `video_cluster_master.csv`
+    - `video_cluster_video_master.csv`
+    - `video_trigger_map_master.csv`
+- `python manage.py build_pincode_directory --input <csv> [--output <json>]`
+- `python manage.py ensure_campaign_enrollment --doctor-id <id>|--email <email> --campaign-id <id> [--registered-by <id>]`
 
-Example command:
+---
 
-```bash
-gunicorn peds_edu.wsgi:application --bind 0.0.0.0:8000 --workers 3
-```
+## 7) URL Map
 
-### Nginx
+### Accounts
 
-Proxy `/` to gunicorn, and serve `/static/` from `staticfiles/` after running:
+- `/accounts/register/`
+- `/accounts/login/`
+- `/accounts/request-password-reset/`
 
-```bash
-python manage.py collectstatic
-```
+### Sharing
 
-Also serve `/media/` from the `media/` directory (doctor photos).
+- `/clinic/<doctor_id>/share/`
+- `/p/<doctor_id>/v/<video_code>/`
+- `/p/<doctor_id>/c/<cluster_code>/`
+- `/api/share-activity/`
+- `/api/playback-event/`
+- `/api/banner-click/`
+- `/tracking/login/`, `/tracking/`
 
-## 8) Key URLs
+### Campaign/Publisher
 
-- Doctor registration: `/accounts/register/`
-- Doctor login: `/accounts/login/`
-- Forgot password: `/accounts/forgot/`
-- Doctor sharing screen: `/clinic/<doctor_id>/share/` (login required)
-- Patient single video page: `/p/<doctor_id>/v/<video_code>/?lang=hi`
-- Patient cluster page: `/p/<doctor_id>/c/<cluster_code>/?lang=ta`
+- `/sso/consume/`
+- `/publisher-landing-page/`
+- `/add-campaign-details/`
+- `/campaigns/`
+- `/campaigns/<campaign_id>/edit/`
+- `/publisher-api/search/`
+- `/publisher-api/expand-selection/`
+- `/field-rep-landing-page/`
 
-## 9) Caching & performance
+### Staff CRUD
 
-The sharing catalog JSON is cached under the key `catalog_json_v1`. Admin changes automatically clear this cache.
+- `/publisher/...` (therapy/triggers/videos/bundles/maps CRUD)
 
-For production scaling, set `REDIS_URL` to enable Redis-backed caching.
+---
+
+## 8) Deployment Notes
+
+- Use Gunicorn + Nginx (`deploy/gunicorn.service`, `deploy/nginx.conf`).
+- Collect static before deploy: `python manage.py collectstatic`.
+- Ensure persistent media storage for doctor photos and campaign banners.
+- Configure Redis via `REDIS_URL` for multi-worker cache consistency.
+
+---
+
+## 9) Current Caveats / Risks
+
+1. Hardcoded credentials/secrets in `settings.py` should be moved to environment/secret manager.
+2. `publisher_campaign` is unmanaged (`managed=False`): schema changes must be manual/coordinated.
+3. `SSO_USE_ENV = False` means in-file defaults currently drive SSO config.
+4. Automated test coverage is minimal relative to workflow complexity.
