@@ -1,40 +1,317 @@
+<style>
+  #support-chatbot-root {
+    position: fixed !important;
+    right: 18px !important;
+    bottom: 18px !important;
+    left: auto !important;
+    top: auto !important;
+    z-index: 2147482000 !important;
+    pointer-events: none;
+    font-family: "Inter", "Segoe UI", Arial, sans-serif;
+  }
+
+  #support-chatbot-root,
+  #support-chatbot-root * {
+    box-sizing: border-box;
+  }
+
+  #support-chatbot-root .support-chatbot__launcher,
+  #support-chatbot-root .support-chatbot__panel {
+    pointer-events: auto;
+  }
+
+  #support-chatbot-root .support-chatbot__launcher {
+    all: unset;
+    width: 56px;
+    height: 56px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    box-shadow: 0 18px 34px rgba(15, 23, 42, 0.22);
+    cursor: pointer;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
+  }
+
+  #support-chatbot-root .support-chatbot__launcher:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 22px 40px rgba(15, 23, 42, 0.28);
+  }
+
+  #support-chatbot-root .support-chatbot__launcher:focus-visible,
+  #support-chatbot-root .support-chatbot__close:focus-visible,
+  #support-chatbot-root .support-chatbot__retry:focus-visible,
+  #support-chatbot-root .support-chatbot__link:focus-visible {
+    outline: 3px solid rgba(37, 99, 235, 0.28);
+    outline-offset: 3px;
+  }
+
+  #support-chatbot-root .support-chatbot__icon {
+    width: 24px;
+    height: 24px;
+    display: block;
+    stroke: #ffffff;
+    stroke-width: 2;
+    fill: none;
+  }
+
+  #support-chatbot-root .support-chatbot__sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  #support-chatbot-root .support-chatbot__panel {
+    width: min(390px, calc(100vw - 24px));
+    max-height: min(620px, calc(100vh - 96px));
+    margin-top: 12px;
+    border: 1px solid rgba(203, 213, 225, 0.9);
+    border-radius: 24px;
+    overflow: hidden;
+    background: #ffffff;
+    box-shadow: 0 24px 64px rgba(15, 23, 42, 0.24);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(10px) scale(0.98);
+    transform-origin: bottom right;
+    transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s ease;
+  }
+
+  #support-chatbot-root[data-state="open"] .support-chatbot__panel {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0) scale(1);
+  }
+
+  #support-chatbot-root .support-chatbot__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 18px 18px 16px;
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    color: #ffffff;
+  }
+
+  #support-chatbot-root .support-chatbot__eyebrow {
+    margin: 0 0 4px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    opacity: 0.84;
+  }
+
+  #support-chatbot-root .support-chatbot__title {
+    margin: 0;
+    font-size: 1.05rem;
+    line-height: 1.3;
+    font-weight: 700;
+  }
+
+  #support-chatbot-root .support-chatbot__subtitle {
+    margin: 6px 0 0;
+    font-size: 0.86rem;
+    line-height: 1.45;
+    opacity: 0.88;
+  }
+
+  #support-chatbot-root .support-chatbot__header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  #support-chatbot-root .support-chatbot__link,
+  #support-chatbot-root .support-chatbot__retry,
+  #support-chatbot-root .support-chatbot__secondary-link,
+  #support-chatbot-root .support-chatbot__close {
+    all: unset;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 40px;
+    padding: 0 14px;
+    border-radius: 999px;
+    font-size: 0.88rem;
+    font-weight: 700;
+    cursor: pointer;
+    text-decoration: none;
+  }
+
+  #support-chatbot-root .support-chatbot__link,
+  #support-chatbot-root .support-chatbot__secondary-link {
+    background: #ffffff;
+    color: #0f172a;
+    border: 1px solid rgba(203, 213, 225, 0.9);
+  }
+
+  #support-chatbot-root .support-chatbot__close {
+    width: 40px;
+    padding: 0;
+    background: rgba(255, 255, 255, 0.16);
+    color: #ffffff;
+  }
+
+  #support-chatbot-root .support-chatbot__body {
+    position: relative;
+    height: min(540px, calc(100vh - 180px));
+    min-height: 420px;
+    background: #ffffff;
+  }
+
+  #support-chatbot-root .support-chatbot__frame,
+  #support-chatbot-root .support-chatbot__status {
+    position: absolute;
+    inset: 0;
+  }
+
+  #support-chatbot-root .support-chatbot__frame {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: #ffffff;
+  }
+
+  #support-chatbot-root .support-chatbot__status {
+    display: none;
+    padding: 28px 24px;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    text-align: center;
+    gap: 12px;
+    background: #ffffff;
+    color: #0f172a;
+  }
+
+  #support-chatbot-root[data-status="loading"] .support-chatbot__status--loading,
+  #support-chatbot-root[data-status="error"] .support-chatbot__status--error {
+    display: flex;
+  }
+
+  #support-chatbot-root .support-chatbot__spinner {
+    width: 34px;
+    height: 34px;
+    border: 3px solid rgba(37, 99, 235, 0.18);
+    border-top-color: #2563eb;
+    border-radius: 999px;
+    animation: support-chatbot-spin 0.8s linear infinite;
+  }
+
+  #support-chatbot-root .support-chatbot__status-title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 700;
+  }
+
+  #support-chatbot-root .support-chatbot__status-copy {
+    margin: 0;
+    max-width: 270px;
+    color: #475569;
+    font-size: 0.9rem;
+    line-height: 1.5;
+  }
+
+  #support-chatbot-root .support-chatbot__status-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 4px;
+  }
+
+  #support-chatbot-root .support-chatbot__retry {
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    color: #ffffff;
+  }
+
+  @keyframes support-chatbot-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @media (max-width: 767px) {
+    #support-chatbot-root {
+      right: 12px !important;
+      bottom: 12px !important;
+    }
+
+    #support-chatbot-root .support-chatbot__launcher {
+      width: 52px;
+      height: 52px;
+    }
+
+    #support-chatbot-root .support-chatbot__panel {
+      width: calc(100vw - 24px);
+      max-height: calc(100vh - 88px);
+    }
+
+    #support-chatbot-root .support-chatbot__body {
+      height: calc(100vh - 220px);
+      min-height: 360px;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    #support-chatbot-root .support-chatbot__launcher,
+    #support-chatbot-root .support-chatbot__panel {
+      transition: none;
+    }
+
+    #support-chatbot-root .support-chatbot__spinner {
+      animation: none;
+    }
+  }
+</style>
+
 <div
-  class="support-widget"
-  data-support-widget
+  id="support-chatbot-root"
+  data-support-chatbot
   data-state="closed"
   data-status="idle"
   data-embed-url="{{ support_widget.embed_url }}"
   data-widget-url="{{ support_widget.widget_url }}"
-  data-page-name="{{ support_widget.page_name }}"
 >
   <button
     type="button"
-    class="support-widget__launcher"
-    data-support-widget-toggle
+    class="support-chatbot__launcher"
+    data-support-chatbot-toggle
+    aria-label="{{ support_widget.launcher_label }}"
+    aria-controls="support-chatbot-panel"
     aria-expanded="false"
-    aria-controls="support-widget-panel"
-    aria-label="Open support"
   >
-    <span class="support-widget__launcher-icon" aria-hidden="true"></span>
-    <span class="sr-only">{{ support_widget.launcher_label }}</span>
+    <svg class="support-chatbot__icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M21 11.5a8.38 8.38 0 0 1-1 4 8.5 8.5 0 0 1-7.5 4.5 8.38 8.38 0 0 1-4-1L3 21l1.5-5.5a8.38 8.38 0 0 1-1-4 8.5 8.5 0 1 1 17 0Z"></path>
+    </svg>
+    <span class="support-chatbot__sr-only">{{ support_widget.launcher_label }}</span>
   </button>
 
   <section
-    id="support-widget-panel"
-    class="support-widget__panel"
-    data-support-widget-panel
+    id="support-chatbot-panel"
+    class="support-chatbot__panel"
+    data-support-chatbot-panel
     aria-hidden="true"
   >
-    <div class="support-widget__header">
-      <div class="support-widget__header-copy">
-        <div class="support-widget__eyebrow">{{ support_widget.role_title }}</div>
-        <h2 class="support-widget__title">{{ support_widget.page_name }}</h2>
-        <p class="support-widget__subtitle">{{ support_widget.context_label }}</p>
+    <div class="support-chatbot__header">
+      <div>
+        <p class="support-chatbot__eyebrow">{{ support_widget.role_title }}</p>
+        <h2 class="support-chatbot__title">{{ support_widget.page_name }}</h2>
+        <p class="support-chatbot__subtitle">{{ support_widget.context_label }}</p>
       </div>
 
-      <div class="support-widget__header-actions">
+      <div class="support-chatbot__header-actions">
         <a
-          class="support-widget__link-button"
+          class="support-chatbot__link"
           href="{{ support_widget.widget_url }}"
           target="_blank"
           rel="noopener noreferrer"
@@ -43,31 +320,31 @@
         </a>
         <button
           type="button"
-          class="support-widget__icon-button"
-          data-support-widget-close
+          class="support-chatbot__close"
+          data-support-chatbot-close
           aria-label="Close support"
         >
-          <span aria-hidden="true">&times;</span>
+          x
         </button>
       </div>
     </div>
 
-    <div class="support-widget__body">
-      <div class="support-widget__status support-widget__status--loading" data-support-widget-loading>
-        <div class="support-widget__spinner" aria-hidden="true"></div>
-        <p class="support-widget__status-title">Loading support</p>
-        <p class="support-widget__status-copy">Connecting to the help widget for this page.</p>
+    <div class="support-chatbot__body">
+      <div class="support-chatbot__status support-chatbot__status--loading" data-support-chatbot-loading>
+        <div class="support-chatbot__spinner" aria-hidden="true"></div>
+        <p class="support-chatbot__status-title">Loading support</p>
+        <p class="support-chatbot__status-copy">Connecting the help widget for this page.</p>
       </div>
 
-      <div class="support-widget__status support-widget__status--error" data-support-widget-error>
-        <p class="support-widget__status-title">Support is unavailable right now.</p>
-        <p class="support-widget__status-copy" data-support-widget-error-message>
+      <div class="support-chatbot__status support-chatbot__status--error" data-support-chatbot-error>
+        <p class="support-chatbot__status-title">Support is unavailable right now.</p>
+        <p class="support-chatbot__status-copy" data-support-chatbot-error-message>
           Please try again or open support in a new tab.
         </p>
-        <div class="support-widget__status-actions">
-          <button type="button" class="support-widget__primary-action" data-support-widget-retry>Retry</button>
+        <div class="support-chatbot__status-actions">
+          <button type="button" class="support-chatbot__retry" data-support-chatbot-retry>Retry</button>
           <a
-            class="support-widget__secondary-action"
+            class="support-chatbot__secondary-link"
             href="{{ support_widget.widget_url }}"
             target="_blank"
             rel="noopener noreferrer"
@@ -78,8 +355,8 @@
       </div>
 
       <iframe
-        class="support-widget__frame"
-        data-support-widget-frame
+        class="support-chatbot__frame"
+        data-support-chatbot-frame
         title="{{ support_widget.iframe_title }}"
         loading="lazy"
         referrerpolicy="strict-origin-when-cross-origin"
@@ -87,3 +364,117 @@
     </div>
   </section>
 </div>
+
+<script>
+  (function () {
+    const root = document.querySelector("[data-support-chatbot]");
+    if (!root) {
+      return;
+    }
+
+    const toggle = root.querySelector("[data-support-chatbot-toggle]");
+    const closeButton = root.querySelector("[data-support-chatbot-close]");
+    const panel = root.querySelector("[data-support-chatbot-panel]");
+    const frame = root.querySelector("[data-support-chatbot-frame]");
+    const retryButton = root.querySelector("[data-support-chatbot-retry]");
+    const errorMessage = root.querySelector("[data-support-chatbot-error-message]");
+    const embedUrl = root.dataset.embedUrl || "";
+
+    let isOpen = false;
+    let hasLoaded = false;
+    let loadTimer = null;
+
+    function clearLoadTimer() {
+      if (loadTimer) {
+        window.clearTimeout(loadTimer);
+        loadTimer = null;
+      }
+    }
+
+    function setStatus(status) {
+      root.dataset.status = status;
+    }
+
+    function setError(message) {
+      if (errorMessage) {
+        errorMessage.textContent = message;
+      }
+      setStatus("error");
+    }
+
+    function loadFrame(forceReload) {
+      if (!embedUrl) {
+        setError("Support is not configured for this page.");
+        return;
+      }
+
+      clearLoadTimer();
+      setStatus("loading");
+
+      if (forceReload) {
+        hasLoaded = false;
+        frame.removeAttribute("src");
+      }
+
+      if (!frame.getAttribute("src")) {
+        frame.setAttribute("src", embedUrl);
+      }
+
+      loadTimer = window.setTimeout(function () {
+        setError("Support took too long to load. You can retry or open it in a new tab.");
+      }, 12000);
+    }
+
+    function setOpen(nextState) {
+      isOpen = nextState;
+      root.dataset.state = isOpen ? "open" : "closed";
+      toggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
+      panel.setAttribute("aria-hidden", isOpen ? "false" : "true");
+
+      if (!isOpen) {
+        clearLoadTimer();
+        return;
+      }
+
+      if (!hasLoaded || root.dataset.status === "error") {
+        loadFrame(root.dataset.status === "error");
+      }
+    }
+
+    toggle.addEventListener("click", function () {
+      setOpen(!isOpen);
+    });
+
+    closeButton.addEventListener("click", function () {
+      setOpen(false);
+    });
+
+    retryButton.addEventListener("click", function () {
+      loadFrame(true);
+    });
+
+    frame.addEventListener("load", function () {
+      clearLoadTimer();
+      hasLoaded = true;
+      setStatus("ready");
+    });
+
+    frame.addEventListener("error", function () {
+      clearLoadTimer();
+      setError("Support could not be loaded right now.");
+    });
+
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape" && isOpen) {
+        setOpen(false);
+      }
+    });
+
+    document.addEventListener("click", function (event) {
+      if (!isOpen || root.contains(event.target)) {
+        return;
+      }
+      setOpen(false);
+    });
+  })();
+</script>
