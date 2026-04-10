@@ -3,7 +3,7 @@ name: Deploy peds_edu_app to EC2
 on:
   push:
     branches:
-      - master     # change to main/testing if that's your deploy branch
+      - production_new     # change to main/testing if that's your deploy branch
 
 jobs:
   deploy:
@@ -15,19 +15,19 @@ jobs:
 
       - name: Debug EC2_SSH_KEY presence
         run: |
-          if [ -z "${{ secrets.EC2_SSH_KEY }}" ]; then
+          if [ -z "${{ secrets.EC2_SSH_KEY_PROD }}" ]; then
             echo "ERROR: EC2_SSH_KEY is EMPTY or not visible to this workflow."
             exit 1
           else
-            echo "EC2_SSH_KEY is set. Length: $(echo "${{ secrets.EC2_SSH_KEY }}" | wc -c) characters"
+            echo "EC2_SSH_KEY is set. Length: $(echo "${{ secrets.EC2_SSH_KEY_PROD }}" | wc -c) characters"
           fi
 
       - name: Write SSH key to file
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+          echo "${{ secrets.EC2_SSH_KEY_PROD }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts || true
+          ssh-keyscan -H ${{ secrets.EC2_HOST_PROD }} >> ~/.ssh/known_hosts || true
 
       - name: Sync code to EC2
         run: |
@@ -39,10 +39,10 @@ jobs:
             --exclude 'venv' \
             --exclude 'media' \
             --exclude 'staticfiles' \
-            ./ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:${{ secrets.EC2_TARGET_DIR }}
+            ./ ${{ secrets.EC2_USER_PROD }}@${{ secrets.EC2_HOST_PROD }}:${{ secrets.EC2_TARGET_DIR_PROD }}
 
       - name: Run deploy script on EC2
         run: |
           ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no \
-            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
-            "cd ${{ secrets.EC2_TARGET_DIR }} && chmod +x deploy.sh && ./deploy.sh"
+            ${{ secrets.EC2_USER_PROD }}@${{ secrets.EC2_HOST_PROD }} \
+            "cd ${{ secrets.EC2_TARGET_DIR_PROD }} && chmod +x deploy.sh && ./deploy.sh"

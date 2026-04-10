@@ -15,12 +15,11 @@ from dotenv import load_dotenv
 from .aws_secrets import get_secret_string  # Optional fallback for secrets
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-load_dotenv(BASE_DIR / ".env")
+load_dotenv("/var/www/secrets/.env")
 
 CSRF_TRUSTED_ORIGINS = [
-    "https://portal.cpdinclinic.co.in",
-    "https://www.portal.cpdinclinic.co.in",
-    "http://3.6.101.52",
+    'http://portal.cpdinclinic.co.in',
+    'https://portal.cpdinclinic.co.in',
 ]
 
 
@@ -86,14 +85,15 @@ WSGI_APPLICATION = "peds_edu.wsgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.mysql",  # Force MySQL
-        "NAME": env("DB_NAME", "peds_edu"),
-        "USER": env("DB_USER", "peds_edu"),
-        "PASSWORD": env("DB_PASSWORD", "Bv9ALOgzFszxDYso"),
-        "HOST": env("DB_HOST", "35.154.221.92"),
-        "PORT": env("DB_PORT", "3306"),
+        "NAME": "patient_portal_live",
+        "USER": "patient_portal_root",
+        "PASSWORD": "R$KG5yIaHZH8B",
+        "HOST": "master-db-new-system.cbnobb8kfeuq.ap-south-1.rds.amazonaws.com",
+        "PORT": "3306",
         "OPTIONS": {"charset": "utf8mb4"},
     }
 }
+
 
 # ---------------------------------------------------------------------
 # MASTER FORMS DB (Project1 master DB) - new-forms-rds
@@ -103,10 +103,10 @@ MASTER_DB_ALIAS = "master"
 
 # ❌ Do NOT use env or secrets
 MASTER_DB_ENGINE = "django.db.backends.mysql"
-MASTER_DB_NAME = "YOUR_DATABASE_NAME"
-MASTER_DB_USER = "root"
-MASTER_DB_PASSWORD = "Hemsod-vytsew-7qypxa"
-MASTER_DB_HOST = "new-forms-rds.cbnobb8kfeuq.ap-south-1.rds.amazonaws.com"
+MASTER_DB_NAME = "healthcare_forms_2"
+MASTER_DB_USER = "admin"
+MASTER_DB_PASSWORD = "fizxyZ-rovpat-memri5"
+MASTER_DB_HOST = "master-db-new-system.cbnobb8kfeuq.ap-south-1.rds.amazonaws.com"
 MASTER_DB_PORT = "3306"
 
 # Table/column config (leave as-is unless schema differs)
@@ -327,7 +327,7 @@ MASTER_DB_CAMPAIGN_ID_COLUMN = os.getenv("MASTER_DB_CAMPAIGN_ID_COLUMN", "campai
 MASTER_DB_CAMPAIGN_DOCTORS_SUPPORTED_COLUMN = os.getenv("MASTER_DB_CAMPAIGN_DOCTORS_SUPPORTED_COLUMN", "doctors_supported").strip()
 MASTER_DB_CAMPAIGN_WA_ADDITION_COLUMN = os.getenv("MASTER_DB_CAMPAIGN_WA_ADDITION_COLUMN", "wa_addition").strip()
 MASTER_DB_CAMPAIGN_VIDEO_CLUSTER_COLUMN = os.getenv("MASTER_DB_CAMPAIGN_VIDEO_CLUSTER_COLUMN", "new_video_cluster_name").strip()
-MASTER_DB_CAMPAIGN_EMAIL_REGISTRATION_COLUMN = os.getenv("MASTER_DB_CAMPAIGN_EMAIL_REGISTRATION_COLUMN", "email_registration").strip()
+MASTER_DB_CAMPAIGN_EMAIL_REGISTRATION_COLUMN = os.getenv("MASTER_DB_CAMPAIGN_EMAIL_REGISTRATION_COLUMN", "recruitment_mail_format").strip()
 
 # Public base URL used for absolute links
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://portal.cpdinclinic.co.in").rstrip("/")
@@ -342,8 +342,8 @@ DATABASES[MASTER_DB_ALIAS] = {
     "ENGINE": "django.db.backends.mysql",
     "NAME": "healthcare_forms_2",
     "USER": "admin",
-    "PASSWORD": "Hemsod-vytsew-7qypxa",
-    "HOST": "new-forms-rds.cbnobb8kfeuq.ap-south-1.rds.amazonaws.com",
+    "PASSWORD": "fizxyZ-rovpat-memri5",
+    "HOST": "master-db-new-system.cbnobb8kfeuq.ap-south-1.rds.amazonaws.com",
     "PORT": "3306",
     "OPTIONS": {"charset": "utf8mb4"},
     "CONN_MAX_AGE": 60,
@@ -376,7 +376,7 @@ MASTER_DB_CAMPAIGN_ID_COLUMN = "id"
 MASTER_DB_CAMPAIGN_DOCTORS_SUPPORTED_COLUMN = "num_doctors_supported"
 MASTER_DB_CAMPAIGN_WA_ADDITION_COLUMN = "add_to_campaign_message"   # used as wa_addition in Project2 flow
 MASTER_DB_CAMPAIGN_VIDEO_CLUSTER_COLUMN = "name"                    # used as new_video_cluster_name in Project2 flow
-MASTER_DB_CAMPAIGN_EMAIL_REGISTRATION_COLUMN = "register_message"   # used as email_registration in Project2 flow
+MASTER_DB_CAMPAIGN_EMAIL_REGISTRATION_COLUMN = "recruitment_mail_format"   # used as email_registration in Project2 flow
 
 PUBLIC_BASE_URL = "https://portal.cpdinclinic.co.in"
 
