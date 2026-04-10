@@ -1,0 +1,89 @@
+<div
+  class="support-widget"
+  data-support-widget
+  data-state="closed"
+  data-status="idle"
+  data-embed-url="{{ support_widget.embed_url }}"
+  data-widget-url="{{ support_widget.widget_url }}"
+  data-page-name="{{ support_widget.page_name }}"
+>
+  <button
+    type="button"
+    class="support-widget__launcher"
+    data-support-widget-toggle
+    aria-expanded="false"
+    aria-controls="support-widget-panel"
+    aria-label="Open support"
+  >
+    <span class="support-widget__launcher-icon" aria-hidden="true">?</span>
+    <span class="support-widget__launcher-text">{{ support_widget.launcher_label }}</span>
+  </button>
+
+  <section
+    id="support-widget-panel"
+    class="support-widget__panel"
+    data-support-widget-panel
+    aria-hidden="true"
+  >
+    <div class="support-widget__header">
+      <div class="support-widget__header-copy">
+        <div class="support-widget__eyebrow">{{ support_widget.role_title }}</div>
+        <h2 class="support-widget__title">{{ support_widget.page_name }}</h2>
+        <p class="support-widget__subtitle">{{ support_widget.context_label }}</p>
+      </div>
+
+      <div class="support-widget__header-actions">
+        <a
+          class="support-widget__link-button"
+          href="{{ support_widget.widget_url }}"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Open
+        </a>
+        <button
+          type="button"
+          class="support-widget__icon-button"
+          data-support-widget-close
+          aria-label="Close support"
+        >
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="support-widget__body">
+      <div class="support-widget__status support-widget__status--loading" data-support-widget-loading>
+        <div class="support-widget__spinner" aria-hidden="true"></div>
+        <p class="support-widget__status-title">Loading support</p>
+        <p class="support-widget__status-copy">Connecting to the help widget for this page.</p>
+      </div>
+
+      <div class="support-widget__status support-widget__status--error" data-support-widget-error>
+        <p class="support-widget__status-title">Support is unavailable right now.</p>
+        <p class="support-widget__status-copy" data-support-widget-error-message>
+          Please try again or open support in a new tab.
+        </p>
+        <div class="support-widget__status-actions">
+          <button type="button" class="support-widget__primary-action" data-support-widget-retry>Retry</button>
+          <a
+            class="support-widget__secondary-action"
+            href="{{ support_widget.widget_url }}"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Open support
+          </a>
+        </div>
+      </div>
+
+      <iframe
+        class="support-widget__frame"
+        data-support-widget-frame
+        title="{{ support_widget.iframe_title }}"
+        loading="lazy"
+        referrerpolicy="strict-origin-when-cross-origin"
+      ></iframe>
+    </div>
+  </section>
+</div>

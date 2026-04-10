@@ -30,6 +30,7 @@ from peds_edu.master_db import (
     generate_temporary_password,
     update_master_password,
 )
+from sharing.support_widget import get_support_page
 
 
 # ---------------------------------------------------------------------
@@ -48,6 +49,8 @@ def _send_doctor_links_email(doctor: DoctorProfile, campaign_id: str | None = No
 
     clinic_link = _build_absolute_url(reverse("sharing:doctor_share", args=[doctor.doctor_id]))
     login_link = _build_absolute_url(reverse("accounts:login"))
+    support_page = get_support_page("doctor_credentials_email") or {}
+    support_link = str(support_page.get("widget_url") or "").strip()
 
     setup_link = ""
     if password_setup:
@@ -67,6 +70,8 @@ def _send_doctor_links_email(doctor: DoctorProfile, campaign_id: str | None = No
     ]
     if setup_link:
         fallback_lines.extend(["To set/reset your password, use the link below:", setup_link, ""])
+    if support_link:
+        fallback_lines.extend(["Need help? Open doctor support here:", support_link, ""])
     fallback_lines.append("Thank you.")
     fallback_body = "\n".join(fallback_lines)
 
@@ -111,6 +116,11 @@ def _send_doctor_links_email(doctor: DoctorProfile, campaign_id: str | None = No
                 "<setup_link>": setup_link,
                 "{{setup_link}}": setup_link,
                 "<LinkPW>": setup_link,
+
+                "<support_link>": support_link,
+                "{{support_link}}": support_link,
+                "<doctor_support_link>": support_link,
+                "{{doctor_support_link}}": support_link,
             }
             for k, v in replacements.items():
                 # Replace even if v is empty (so placeholders disappear)
@@ -120,6 +130,9 @@ def _send_doctor_links_email(doctor: DoctorProfile, campaign_id: str | None = No
         body = _render(template_text).strip()
     else:
         body = fallback_body
+
+    if support_link and support_link not in body:
+        body = f"{body.rstrip()}\n\nNeed help? Open doctor support here:\n{support_link}"
 
     return send_email_via_sendgrid(
         subject="CPD in Clinic portal access",
