@@ -5,7 +5,7 @@
 
 This document is a full technical reference for engineers and AI agents maintaining/extending PedsEdu.
 
----
+It covers:
 
 ## Table of Contents
 
