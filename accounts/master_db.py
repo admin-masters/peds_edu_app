@@ -164,6 +164,10 @@ def qn(name: str) -> str:
     return conn.ops.quote_name(name)
 
 
+def qcol(alias: str, name: str) -> str:
+    return f"{qn(alias)}.{qn(name)}"
+
+
 def normalize_wa_for_lookup(raw: str) -> str:
     if raw is None:
         return ""
@@ -210,6 +214,7 @@ def _normalize_uuid_for_mysql(value: str) -> str:
 # -----------------------------------------------------------------------------
 
 _ENROLLMENT_META_CACHE: Optional[dict] = None
+_TABLE_COLUMNS_CACHE: dict[tuple[str, str], list[str]] = {}
 
 
 def _db_schema_name(conn) -> str:
@@ -245,6 +250,9 @@ def _get_table_columns(conn, table: str) -> list[str]:
     schema = _db_schema_name(conn)
     if not schema:
         return []
+    cache_key = (schema, str(table or "").lower())
+    if cache_key in _TABLE_COLUMNS_CACHE:
+        return list(_TABLE_COLUMNS_CACHE[cache_key])
     sql = """
         SELECT COLUMN_NAME
         FROM INFORMATION_SCHEMA.COLUMNS
@@ -254,7 +262,9 @@ def _get_table_columns(conn, table: str) -> list[str]:
     with conn.cursor() as cur:
         cur.execute(sql, [schema, table])
         rows = cur.fetchall() or []
-    return [r[0] for r in rows if r and r[0]]
+    cols = [r[0] for r in rows if r and r[0]]
+    _TABLE_COLUMNS_CACHE[cache_key] = cols
+    return list(cols)
 
 
 def _pick_first_column(cols: list[str], candidates: list[str]) -> str:
@@ -832,7 +842,7 @@ def create_doctor_with_enrollment(
     campaign_id: str = "",
     registered_by: str = "",
     recruited_via: str = "",
-    initial_password_raw: str | None = None,
+    initial_password_raw: Optional[str] = None,
 ) -> str:
     """
     Creates doctor in MASTER redflags_doctor and enrolls into campaign tables.
@@ -1322,6 +1332,753 @@ def get_doctor_by_whatsapp(whatsapp_number: str) -> Optional[MasterDoctorLite]:
         full_name=full_name,
         whatsapp_no=wa,
     )
+
+
+def _split_grouped_values(raw_value: str) -> tuple[str, ...]:
+    if not raw_value:
+        return ()
+    items = []
+    seen = set()
+    for chunk in str(raw_value).split(","):
+        value = chunk.strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        items.append(value)
+    return tuple(items)
+
+
+@dataclass(frozen=True)
+class MasterFieldRepRecord:
+    id: int
+    full_name: str
+    phone_number: str
+    brand_supplied_field_rep_id: str
+    is_active: bool
+    state: str
+    brand_id: Optional[int]
+    user_id: Optional[int]
+    created_at: object
+    updated_at: object
+    linked_campaign_ids: tuple[str, ...] = ()
+
+
+def list_field_rep_records(search: str = "") -> list[MasterFieldRepRecord]:
+    conn = get_master_connection()
+    table = getattr(settings, "MASTER_DB_FIELD_REP_TABLE", "campaign_fieldrep")
+    join_table = getattr(settings, "MASTER_DB_CAMPAIGN_FIELD_REP_TABLE", "campaign_campaignfieldrep")
+    cols = _get_table_columns(conn, table)
+    join_cols = _get_table_columns(conn, join_table)
+    id_col = _pick_first_column(cols, ["id"])
+    name_col = _pick_first_column(cols, ["full_name", "name"])
+    phone_col = _pick_first_column(cols, ["phone_number", "phone"])
+    external_id_col = _pick_first_column(cols, ["brand_supplied_field_rep_id", "external_id", "field_rep_id"])
+    active_col = _pick_first_column(cols, ["is_active", "active"])
+    state_col = _pick_first_column(cols, ["state"])
+    brand_col = _pick_first_column(cols, ["brand_id"])
+    user_col = _pick_first_column(cols, ["user_id"])
+    created_col = _pick_first_column(cols, ["created_at"])
+    updated_col = _pick_first_column(cols, ["updated_at"])
+    join_field_rep_col = _pick_first_column(join_cols, ["field_rep_id"])
+    join_campaign_col = _pick_first_column(join_cols, ["campaign_id"])
+
+    if not id_col:
+        return []
+
+    state_expr = qcol("fr", state_col) if state_col else "''"
+    brand_expr = qcol("fr", brand_col) if brand_col else "NULL"
+    user_expr = qcol("fr", user_col) if user_col else "NULL"
+    created_expr = qcol("fr", created_col) if created_col else "NULL"
+    updated_expr = qcol("fr", updated_col) if updated_col else created_expr
+    name_expr = qcol("fr", name_col) if name_col else "''"
+    phone_expr = qcol("fr", phone_col) if phone_col else "''"
+    external_id_expr = qcol("fr", external_id_col) if external_id_col else "''"
+    active_expr = qcol("fr", active_col) if active_col else "1"
+    linked_campaign_expr = (
+        f"GROUP_CONCAT(DISTINCT {qcol('cfr', join_campaign_col)} ORDER BY {qcol('cfr', join_campaign_col)} SEPARATOR ',')"
+        if join_campaign_col
+        else "NULL"
+    )
+
+    where_sql = ""
+    params: list[object] = []
+    term = (search or "").strip().lower()
+    if term:
+        like = f"%{term}%"
+        search_parts = []
+        if name_col:
+            search_parts.append("LOWER(COALESCE({0}, '')) LIKE %s".format(name_expr))
+            params.append(like)
+        if phone_col:
+            search_parts.append("LOWER(COALESCE({0}, '')) LIKE %s".format(phone_expr))
+            params.append(like)
+        if external_id_col:
+            search_parts.append("LOWER(COALESCE({0}, '')) LIKE %s".format(external_id_expr))
+            params.append(like)
+        if join_campaign_col:
+            search_parts.append("LOWER(COALESCE({0}, '')) LIKE %s".format(qcol("cfr", join_campaign_col)))
+            params.append(like)
+        if state_col:
+            search_parts.append("LOWER(COALESCE({0}, '')) LIKE %s".format(state_expr))
+            params.append(like)
+        if search_parts:
+            where_sql = f"""
+                WHERE (
+                    {" OR ".join(search_parts)}
+                )
+            """
+
+    sql = f"""
+        SELECT
+            {qcol('fr', id_col)},
+            {name_expr},
+            {phone_expr},
+            {external_id_expr},
+            {active_expr},
+            {state_expr},
+            {brand_expr},
+            {user_expr},
+            {created_expr},
+            {updated_expr},
+            {linked_campaign_expr} AS linked_campaign_ids
+        FROM {qn(table)} fr
+        {"LEFT JOIN " + qn(join_table) + " cfr ON " + qcol('cfr', join_field_rep_col) + " = " + qcol('fr', id_col) if join_field_rep_col and join_campaign_col else ""}
+        {where_sql}
+        GROUP BY
+            {qcol('fr', id_col)},
+            {name_expr},
+            {phone_expr},
+            {external_id_expr},
+            {active_expr},
+            {state_expr},
+            {brand_expr},
+            {user_expr},
+            {created_expr},
+            {updated_expr}
+        ORDER BY {updated_expr} DESC, {qcol('fr', id_col)} DESC
+    """
+
+    with conn.cursor() as cur:
+        cur.execute(sql, params)
+        rows = cur.fetchall() or []
+
+    records: list[MasterFieldRepRecord] = []
+    for row in rows:
+        records.append(
+            MasterFieldRepRecord(
+                id=int(row[0]),
+                full_name=str(row[1] or "").strip(),
+                phone_number=str(row[2] or "").strip(),
+                brand_supplied_field_rep_id=str(row[3] or "").strip(),
+                is_active=bool(int(row[4] or 0)) if str(row[4] or "").isdigit() else bool(row[4]),
+                state=str(row[5] or "").strip(),
+                brand_id=int(row[6]) if row[6] is not None else None,
+                user_id=int(row[7]) if row[7] is not None else None,
+                created_at=row[8],
+                updated_at=row[9],
+                linked_campaign_ids=_split_grouped_values(row[10]),
+            )
+        )
+    return records
+
+
+def get_field_rep_record(field_rep_id) -> Optional[MasterFieldRepRecord]:
+    raw = str(field_rep_id or "").strip()
+    if not raw.isdigit():
+        return None
+    target = int(raw)
+    for record in list_field_rep_records():
+        if record.id == target:
+            return record
+    return None
+
+
+def update_field_rep_record(field_rep_id, *, full_name: str, phone_number: str, brand_supplied_field_rep_id: str, state: str, is_active: bool) -> None:
+    raw = str(field_rep_id or "").strip()
+    if not raw.isdigit():
+        raise ValueError("Invalid field rep id.")
+
+    conn = get_master_connection()
+    table = getattr(settings, "MASTER_DB_FIELD_REP_TABLE", "campaign_fieldrep")
+    cols = _get_table_columns(conn, table)
+    id_col = _pick_first_column(cols, ["id"])
+    name_col = _pick_first_column(cols, ["full_name", "name"])
+    phone_col = _pick_first_column(cols, ["phone_number", "phone"])
+    external_id_col = _pick_first_column(cols, ["brand_supplied_field_rep_id", "external_id", "field_rep_id"])
+    active_col = _pick_first_column(cols, ["is_active", "active"])
+    state_col = _pick_first_column(cols, ["state"])
+    updated_col = _pick_first_column(cols, ["updated_at"])
+    now = timezone.now()
+    if not id_col:
+        raise ValueError("Field rep table is missing its primary key column.")
+
+    assignments = []
+    if name_col:
+        assignments.append((qn(name_col), str(full_name or "").strip()))
+    if phone_col:
+        assignments.append((qn(phone_col), str(phone_number or "").strip()))
+    if external_id_col:
+        assignments.append((qn(external_id_col), str(brand_supplied_field_rep_id or "").strip()))
+    if active_col:
+        assignments.append((qn(active_col), 1 if is_active else 0))
+    if state_col:
+        assignments.append((qn(state_col), str(state or "").strip()))
+    if updated_col:
+        assignments.append((qn(updated_col), now))
+    if not assignments:
+        return
+
+    set_sql = ", ".join([f"{col} = %s" for col, _ in assignments])
+    params = [value for _, value in assignments] + [int(raw)]
+
+    with transaction.atomic(using=master_alias()):
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                UPDATE {qn(table)}
+                SET
+                    {set_sql}
+                WHERE {qn(id_col)} = %s
+                """,
+                params,
+            )
+
+
+def delete_field_rep_record(field_rep_id) -> None:
+    raw = str(field_rep_id or "").strip()
+    if not raw.isdigit():
+        raise ValueError("Invalid field rep id.")
+
+    conn = get_master_connection()
+    field_rep_table = getattr(settings, "MASTER_DB_FIELD_REP_TABLE", "campaign_fieldrep")
+    join_table = getattr(settings, "MASTER_DB_CAMPAIGN_FIELD_REP_TABLE", "campaign_campaignfieldrep")
+    enrollment_table = "campaign_doctorcampaignenrollment"
+    field_rep_cols = _get_table_columns(conn, field_rep_table)
+    join_cols = _get_table_columns(conn, join_table)
+    enrollment_cols = _get_table_columns(conn, enrollment_table)
+    field_rep_id_col = _pick_first_column(field_rep_cols, ["id"])
+    join_field_rep_col = _pick_first_column(join_cols, ["field_rep_id"])
+    enrollment_registered_by_col = _pick_first_column(enrollment_cols, ["registered_by_id", "registered_by", "field_rep_id"])
+
+    with transaction.atomic(using=master_alias()):
+        with conn.cursor() as cur:
+            if enrollment_registered_by_col:
+                cur.execute(
+                    f"""
+                    UPDATE {qn(enrollment_table)}
+                    SET {qn(enrollment_registered_by_col)} = NULL
+                    WHERE {qn(enrollment_registered_by_col)} = %s
+                    """,
+                    [int(raw)],
+                )
+            if join_field_rep_col:
+                cur.execute(
+                    f"DELETE FROM {qn(join_table)} WHERE {qn(join_field_rep_col)} = %s",
+                    [int(raw)],
+                )
+            if field_rep_id_col:
+                cur.execute(
+                    f"DELETE FROM {qn(field_rep_table)} WHERE {qn(field_rep_id_col)} = %s",
+                    [int(raw)],
+                )
+
+
+@dataclass(frozen=True)
+class MasterDoctorRecord:
+    doctor_id: str
+    first_name: str
+    last_name: str
+    email: str
+    whatsapp_no: str
+    clinic_name: str
+    clinic_phone: str
+    clinic_appointment_number: str
+    clinic_address: str
+    postal_code: str
+    state: str
+    district: str
+    receptionist_whatsapp_number: str
+    imc_registration_number: str
+    field_rep_id: str
+    recruited_via: str
+    clinic_user1_name: str
+    clinic_user1_email: str
+    clinic_user2_name: str
+    clinic_user2_email: str
+    created_at: object
+    linked_campaign_ids: tuple[str, ...] = ()
+
+    @property
+    def full_name(self) -> str:
+        return (f"{self.first_name} {self.last_name}").strip() or self.doctor_id
+
+
+def _phone_lookup_tokens(*values: str) -> set[str]:
+    tokens: set[str] = set()
+    for raw in values:
+        text = str(raw or "").strip()
+        if text:
+            tokens.add(text)
+
+        digits = re.sub(r"\D", "", text)
+        if not digits:
+            continue
+        tokens.add(digits)
+        if len(digits) > 10:
+            tokens.add(digits[-10:])
+    return tokens
+
+
+def _fetch_master_doctor_rows(conn) -> list[dict[str, object]]:
+    doctor_table = getattr(settings, "MASTER_DB_DOCTOR_TABLE", "redflags_doctor")
+    cols = _get_table_columns(conn, doctor_table)
+
+    field_candidates = [
+        ("doctor_id", ["doctor_id"], "''"),
+        ("first_name", ["first_name"], "''"),
+        ("last_name", ["last_name"], "''"),
+        ("email", ["email"], "''"),
+        ("whatsapp_no", ["whatsapp_no"], "''"),
+        ("clinic_name", ["clinic_name"], "''"),
+        ("clinic_phone", ["clinic_phone"], "''"),
+        ("clinic_appointment_number", ["clinic_appointment_number"], "''"),
+        ("clinic_address", ["clinic_address"], "''"),
+        ("postal_code", ["postal_code"], "''"),
+        ("state", ["state"], "''"),
+        ("district", ["district"], "''"),
+        ("receptionist_whatsapp_number", ["receptionist_whatsapp_number"], "''"),
+        ("imc_registration_number", ["imc_registration_number"], "''"),
+        ("field_rep_id", ["field_rep_id"], "''"),
+        ("recruited_via", ["recruited_via"], "''"),
+        ("clinic_user1_name", ["clinic_user1_name"], "''"),
+        ("clinic_user1_email", ["clinic_user1_email"], "''"),
+        ("clinic_user2_name", ["clinic_user2_name"], "''"),
+        ("clinic_user2_email", ["clinic_user2_email"], "''"),
+        ("created_at", ["created_at"], "NULL"),
+    ]
+
+    select_parts: list[str] = []
+    row_keys: list[str] = []
+    for key, candidates, default_sql in field_candidates:
+        col = _pick_first_column(cols, candidates)
+        expr = qcol("rd", col) if col else default_sql
+        select_parts.append(f"{expr} AS {qn(key)}")
+        row_keys.append(key)
+
+    order_col = _pick_first_column(cols, ["created_at"]) or _pick_first_column(cols, ["doctor_id"])
+    order_expr = qcol("rd", order_col) if order_col else "1"
+
+    sql = f"""
+        SELECT
+            {", ".join(select_parts)}
+        FROM {qn(doctor_table)} rd
+        ORDER BY {order_expr} DESC
+    """
+
+    with conn.cursor() as cur:
+        cur.execute(sql)
+        rows = cur.fetchall() or []
+
+    return [dict(zip(row_keys, row)) for row in rows]
+
+
+def _resolve_campaign_doctor_ids_for_doctor_rows(conn, doctor_rows: list[dict[str, object]]) -> dict[str, list[int]]:
+    mapping: dict[str, list[int]] = {}
+    if not doctor_rows:
+        return mapping
+
+    table = "campaign_doctor"
+    cols = _get_table_columns(conn, table)
+    id_col = _pick_first_column(cols, ["id"])
+    doctor_id_col = _pick_first_column(cols, ["doctor_id"])
+    email_col = _pick_first_column(cols, ["email"])
+    phone_col = _pick_first_column(cols, ["phone"])
+
+    if not id_col:
+        return mapping
+
+    if doctor_id_col:
+        doctor_ids = [str(row.get("doctor_id") or "").strip() for row in doctor_rows if str(row.get("doctor_id") or "").strip()]
+        if not doctor_ids:
+            return mapping
+
+        placeholders = ", ".join(["%s"] * len(doctor_ids))
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT {qn(id_col)}, {qn(doctor_id_col)}
+                FROM {qn(table)}
+                WHERE {qn(doctor_id_col)} IN ({placeholders})
+                """,
+                doctor_ids,
+            )
+            rows = cur.fetchall() or []
+
+        for row in rows:
+            doctor_id = str(row[1] or "").strip()
+            if not doctor_id:
+                continue
+            mapping.setdefault(doctor_id, []).append(int(row[0]))
+        return mapping
+
+    select_parts = [qn(id_col)]
+    if email_col:
+        select_parts.append(qn(email_col))
+    else:
+        select_parts.append("''")
+    if phone_col:
+        select_parts.append(qn(phone_col))
+    else:
+        select_parts.append("''")
+
+    with conn.cursor() as cur:
+        cur.execute(f"SELECT {', '.join(select_parts)} FROM {qn(table)}")
+        campaign_rows = cur.fetchall() or []
+
+    email_to_doctor_ids: dict[str, set[str]] = {}
+    phone_to_doctor_ids: dict[str, set[str]] = {}
+    for row in doctor_rows:
+        doctor_id = str(row.get("doctor_id") or "").strip()
+        if not doctor_id:
+            continue
+
+        email = str(row.get("email") or "").strip().lower()
+        if email:
+            email_to_doctor_ids.setdefault(email, set()).add(doctor_id)
+
+        for token in _phone_lookup_tokens(
+            str(row.get("whatsapp_no") or ""),
+            str(row.get("receptionist_whatsapp_number") or ""),
+            str(row.get("clinic_appointment_number") or ""),
+            str(row.get("clinic_phone") or ""),
+        ):
+            phone_to_doctor_ids.setdefault(token, set()).add(doctor_id)
+
+    for row in campaign_rows:
+        campaign_doctor_id = int(row[0])
+        matched_doctor_ids: set[str] = set()
+
+        email = str(row[1] or "").strip().lower()
+        if email and email in email_to_doctor_ids:
+            matched_doctor_ids.update(email_to_doctor_ids[email])
+
+        for token in _phone_lookup_tokens(str(row[2] or "")):
+            if token in phone_to_doctor_ids:
+                matched_doctor_ids.update(phone_to_doctor_ids[token])
+
+        for doctor_id in matched_doctor_ids:
+            mapping.setdefault(doctor_id, []).append(campaign_doctor_id)
+
+    return mapping
+
+
+def _fetch_enrollment_map(conn, campaign_doctor_ids: list[int]) -> dict[int, tuple[str, ...]]:
+    if not campaign_doctor_ids:
+        return {}
+
+    table = "campaign_doctorcampaignenrollment"
+    cols = _get_table_columns(conn, table)
+    doctor_id_col = _pick_first_column(cols, ["doctor_id"])
+    campaign_id_col = _pick_first_column(cols, ["campaign_id"])
+    if not doctor_id_col or not campaign_id_col:
+        return {}
+
+    placeholders = ", ".join(["%s"] * len(campaign_doctor_ids))
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT {qn(doctor_id_col)}, {qn(campaign_id_col)}
+            FROM {qn(table)}
+            WHERE {qn(doctor_id_col)} IN ({placeholders})
+            ORDER BY {qn(doctor_id_col)}, {qn(campaign_id_col)}
+            """,
+            campaign_doctor_ids,
+        )
+        rows = cur.fetchall() or []
+
+    mapping: dict[int, list[str]] = {}
+    for row in rows:
+        campaign_doctor_id = int(row[0])
+        campaign_id = str(row[1] or "").strip()
+        if not campaign_id:
+            continue
+        mapping.setdefault(campaign_doctor_id, [])
+        if campaign_id not in mapping[campaign_doctor_id]:
+            mapping[campaign_doctor_id].append(campaign_id)
+
+    return {key: tuple(value) for key, value in mapping.items()}
+
+
+def _doctor_record_matches_search(record: MasterDoctorRecord, term: str) -> bool:
+    haystacks = [
+        record.doctor_id,
+        record.first_name,
+        record.last_name,
+        record.full_name,
+        record.email,
+        record.whatsapp_no,
+        record.clinic_name,
+        record.clinic_phone,
+        record.clinic_appointment_number,
+        record.clinic_address,
+        record.postal_code,
+        record.state,
+        record.district,
+        record.receptionist_whatsapp_number,
+        record.imc_registration_number,
+        record.field_rep_id,
+        record.recruited_via,
+        record.clinic_user1_name,
+        record.clinic_user1_email,
+        record.clinic_user2_name,
+        record.clinic_user2_email,
+    ]
+    haystacks.extend(list(record.linked_campaign_ids))
+    lowered = term.lower()
+    return any(lowered in str(value or "").lower() for value in haystacks)
+
+
+def _doctor_record_to_lookup_row(record: MasterDoctorRecord) -> dict[str, object]:
+    return {
+        "doctor_id": record.doctor_id,
+        "email": record.email,
+        "whatsapp_no": record.whatsapp_no,
+        "receptionist_whatsapp_number": record.receptionist_whatsapp_number,
+        "clinic_appointment_number": record.clinic_appointment_number,
+        "clinic_phone": record.clinic_phone,
+    }
+
+
+def list_doctor_records(search: str = "") -> list[MasterDoctorRecord]:
+    conn = get_master_connection()
+    doctor_rows = _fetch_master_doctor_rows(conn)
+    campaign_doctor_ids_by_doctor = _resolve_campaign_doctor_ids_for_doctor_rows(conn, doctor_rows)
+    enrollment_map = _fetch_enrollment_map(
+        conn,
+        sorted({campaign_doctor_id for values in campaign_doctor_ids_by_doctor.values() for campaign_doctor_id in values}),
+    )
+
+    records: list[MasterDoctorRecord] = []
+    for row in doctor_rows:
+        doctor_id = str(row.get("doctor_id") or "").strip()
+        linked_campaign_ids: list[str] = []
+        for campaign_doctor_id in campaign_doctor_ids_by_doctor.get(doctor_id, []):
+            for campaign_id in enrollment_map.get(campaign_doctor_id, ()):
+                if campaign_id not in linked_campaign_ids:
+                    linked_campaign_ids.append(campaign_id)
+
+        record = MasterDoctorRecord(
+            doctor_id=doctor_id,
+            first_name=str(row.get("first_name") or "").strip(),
+            last_name=str(row.get("last_name") or "").strip(),
+            email=str(row.get("email") or "").strip().lower(),
+            whatsapp_no=str(row.get("whatsapp_no") or "").strip(),
+            clinic_name=str(row.get("clinic_name") or "").strip(),
+            clinic_phone=str(row.get("clinic_phone") or "").strip(),
+            clinic_appointment_number=str(row.get("clinic_appointment_number") or "").strip(),
+            clinic_address=str(row.get("clinic_address") or "").strip(),
+            postal_code=str(row.get("postal_code") or "").strip(),
+            state=str(row.get("state") or "").strip(),
+            district=str(row.get("district") or "").strip(),
+            receptionist_whatsapp_number=str(row.get("receptionist_whatsapp_number") or "").strip(),
+            imc_registration_number=str(row.get("imc_registration_number") or "").strip(),
+            field_rep_id=str(row.get("field_rep_id") or "").strip(),
+            recruited_via=str(row.get("recruited_via") or "").strip(),
+            clinic_user1_name=str(row.get("clinic_user1_name") or "").strip(),
+            clinic_user1_email=str(row.get("clinic_user1_email") or "").strip().lower(),
+            clinic_user2_name=str(row.get("clinic_user2_name") or "").strip(),
+            clinic_user2_email=str(row.get("clinic_user2_email") or "").strip().lower(),
+            created_at=row.get("created_at"),
+            linked_campaign_ids=tuple(linked_campaign_ids),
+        )
+        records.append(record)
+
+    term = (search or "").strip().lower()
+    if term:
+        records = [record for record in records if _doctor_record_matches_search(record, term)]
+
+    return records
+
+
+def get_doctor_record(doctor_id: str) -> Optional[MasterDoctorRecord]:
+    target = str(doctor_id or "").strip()
+    if not target:
+        return None
+    for record in list_doctor_records():
+        if record.doctor_id == target:
+            return record
+    return None
+
+
+def update_doctor_record(
+    doctor_id: str,
+    *,
+    first_name: str,
+    last_name: str,
+    email: str,
+    whatsapp_no: str,
+    clinic_name: str,
+    clinic_phone: str,
+    clinic_appointment_number: str,
+    clinic_address: str,
+    postal_code: str,
+    state: str,
+    district: str,
+    receptionist_whatsapp_number: str,
+    imc_registration_number: str,
+    field_rep_id: str,
+    recruited_via: str,
+    clinic_user1_name: str,
+    clinic_user1_email: str,
+    clinic_user2_name: str,
+    clinic_user2_email: str,
+) -> None:
+    target = str(doctor_id or "").strip()
+    if not target:
+        raise ValueError("Invalid doctor id.")
+
+    conn = get_master_connection()
+    doctor_table = getattr(settings, "MASTER_DB_DOCTOR_TABLE", "redflags_doctor")
+    campaign_doctor_table = "campaign_doctor"
+    doctor_cols = _get_table_columns(conn, doctor_table)
+    campaign_doctor_cols = _get_table_columns(conn, campaign_doctor_table)
+    doctor_id_col = _pick_first_column(doctor_cols, ["doctor_id"])
+    campaign_doctor_id_col = _pick_first_column(campaign_doctor_cols, ["id"])
+    existing_record = get_doctor_record(target)
+    full_name = (f"{first_name} {last_name}").strip() or target
+    campaign_phone = (
+        str(whatsapp_no or "").strip()
+        or str(receptionist_whatsapp_number or "").strip()
+        or str(clinic_appointment_number or "").strip()
+    )
+    campaign_doctor_ids: list[int] = []
+    if existing_record is not None:
+        campaign_doctor_ids = _resolve_campaign_doctor_ids_for_doctor_rows(
+            conn,
+            [_doctor_record_to_lookup_row(existing_record)],
+        ).get(target, [])
+
+    doctor_assignments = []
+    for col_name, value in [
+        ("first_name", str(first_name or "").strip()),
+        ("last_name", str(last_name or "").strip()),
+        ("email", str(email or "").strip().lower()),
+        ("whatsapp_no", str(whatsapp_no or "").strip()),
+        ("clinic_name", str(clinic_name or "").strip()),
+        ("clinic_phone", str(clinic_phone or "").strip()),
+        ("clinic_appointment_number", str(clinic_appointment_number or "").strip()),
+        ("clinic_address", str(clinic_address or "").strip()),
+        ("postal_code", str(postal_code or "").strip()),
+        ("state", str(state or "").strip()),
+        ("district", str(district or "").strip()),
+        ("receptionist_whatsapp_number", str(receptionist_whatsapp_number or "").strip()),
+        ("imc_registration_number", str(imc_registration_number or "").strip()),
+        ("field_rep_id", str(field_rep_id or "").strip()),
+        ("recruited_via", str(recruited_via or "").strip()),
+        ("clinic_user1_name", str(clinic_user1_name or "").strip()),
+        ("clinic_user1_email", str(clinic_user1_email or "").strip().lower()),
+        ("clinic_user2_name", str(clinic_user2_name or "").strip()),
+        ("clinic_user2_email", str(clinic_user2_email or "").strip().lower()),
+    ]:
+        actual_col = _pick_first_column(doctor_cols, [col_name])
+        if actual_col:
+            doctor_assignments.append((actual_col, value))
+
+    with transaction.atomic(using=master_alias()):
+        with conn.cursor() as cur:
+            if doctor_assignments and doctor_id_col:
+                set_sql = ", ".join([f"{qn(col)} = %s" for col, _ in doctor_assignments])
+                cur.execute(
+                    f"""
+                    UPDATE {qn(doctor_table)}
+                    SET {set_sql}
+                    WHERE {qn(doctor_id_col)} = %s
+                    """,
+                    [value for _, value in doctor_assignments] + [target],
+                )
+
+            if not campaign_doctor_ids:
+                campaign_doctor_ids = _resolve_campaign_doctor_ids_for_doctor_rows(
+                    conn,
+                    [
+                        {
+                            "doctor_id": target,
+                            "email": str(email or "").strip().lower(),
+                            "whatsapp_no": str(whatsapp_no or "").strip(),
+                            "receptionist_whatsapp_number": str(receptionist_whatsapp_number or "").strip(),
+                            "clinic_appointment_number": str(clinic_appointment_number or "").strip(),
+                            "clinic_phone": str(clinic_phone or "").strip(),
+                        }
+                    ],
+                ).get(target, [])
+
+            campaign_assignments = []
+            for col_name, value in [
+                ("full_name", full_name),
+                ("email", str(email or "").strip().lower()),
+                ("phone", campaign_phone),
+                ("city", str(district or "").strip()),
+                ("state", str(state or "").strip()),
+            ]:
+                actual_col = _pick_first_column(campaign_doctor_cols, [col_name])
+                if actual_col:
+                    campaign_assignments.append((actual_col, value))
+
+            if campaign_doctor_ids and campaign_assignments and campaign_doctor_id_col:
+                placeholders = ", ".join(["%s"] * len(campaign_doctor_ids))
+                set_sql = ", ".join([f"{qn(col)} = %s" for col, _ in campaign_assignments])
+                cur.execute(
+                    f"""
+                    UPDATE {qn(campaign_doctor_table)}
+                    SET {set_sql}
+                    WHERE {qn(campaign_doctor_id_col)} IN ({placeholders})
+                    """,
+                    [value for _, value in campaign_assignments] + campaign_doctor_ids,
+                )
+
+
+def delete_doctor_record(doctor_id: str) -> None:
+    target = str(doctor_id or "").strip()
+    if not target:
+        raise ValueError("Invalid doctor id.")
+
+    conn = get_master_connection()
+    doctor_table = getattr(settings, "MASTER_DB_DOCTOR_TABLE", "redflags_doctor")
+    campaign_doctor_table = "campaign_doctor"
+    enrollment_table = "campaign_doctorcampaignenrollment"
+    doctor_cols = _get_table_columns(conn, doctor_table)
+    campaign_doctor_cols = _get_table_columns(conn, campaign_doctor_table)
+    enrollment_cols = _get_table_columns(conn, enrollment_table)
+    doctor_id_col = _pick_first_column(doctor_cols, ["doctor_id"])
+    campaign_doctor_id_col = _pick_first_column(campaign_doctor_cols, ["id"])
+    enrollment_doctor_col = _pick_first_column(enrollment_cols, ["doctor_id"])
+    existing_record = get_doctor_record(target)
+    campaign_doctor_ids: list[int] = []
+    if existing_record is not None:
+        campaign_doctor_ids = _resolve_campaign_doctor_ids_for_doctor_rows(
+            conn,
+            [_doctor_record_to_lookup_row(existing_record)],
+        ).get(target, [])
+
+    with transaction.atomic(using=master_alias()):
+        with conn.cursor() as cur:
+            if campaign_doctor_ids and campaign_doctor_id_col:
+                placeholders = ", ".join(["%s"] * len(campaign_doctor_ids))
+                if enrollment_doctor_col:
+                    cur.execute(
+                        f"DELETE FROM {qn(enrollment_table)} WHERE {qn(enrollment_doctor_col)} IN ({placeholders})",
+                        campaign_doctor_ids,
+                    )
+                cur.execute(
+                    f"DELETE FROM {qn(campaign_doctor_table)} WHERE {qn(campaign_doctor_id_col)} IN ({placeholders})",
+                    campaign_doctor_ids,
+                )
+
+            if doctor_id_col:
+                cur.execute(
+                    f"DELETE FROM {qn(doctor_table)} WHERE {qn(doctor_id_col)} = %s",
+                    [target],
+                )
 
 # -----------------------------------------------------------------------------
 # Compatibility aliases (do NOT remove)

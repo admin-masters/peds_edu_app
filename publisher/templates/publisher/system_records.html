@@ -1,0 +1,252 @@
+{% extends "base.html" %}
+
+{% block title %}System Records{% endblock %}
+{% block header_title %}System Records{% endblock %}
+
+{% block content %}
+<div class="page-shell">
+  <section class="card hero-card stack-lg">
+    <div class="section-heading">
+      <div class="section-heading__text">
+        <h1>System Records Hub</h1>
+        <p class="section-subtitle">Superuser-only controls for Patient Education campaign data, field reps, and doctor records.</p>
+      </div>
+      <a class="btn btn-secondary" href="{% url 'publisher:dashboard' %}">Back to dashboard</a>
+    </div>
+
+    <div class="stats-grid">
+      <article class="stat-card">
+        <div class="stat-card__header">
+          <span class="stat-card__label">Campaigns</span>
+          <span class="badge badge--primary">Portal DB</span>
+        </div>
+        <div class="stat-card__value">{{ stats.campaigns }}</div>
+      </article>
+      <article class="stat-card">
+        <div class="stat-card__header">
+          <span class="stat-card__label">Field reps</span>
+          <span class="badge badge--primary">Master DB</span>
+        </div>
+        <div class="stat-card__value">{{ stats.field_reps }}</div>
+      </article>
+      <article class="stat-card">
+        <div class="stat-card__header">
+          <span class="stat-card__label">Doctors</span>
+          <span class="badge badge--primary">Master + Local</span>
+        </div>
+        <div class="stat-card__value">{{ stats.doctors }}</div>
+      </article>
+    </div>
+  </section>
+
+  <section class="card stack-lg">
+    <div class="section-heading">
+      <div class="section-heading__text">
+        <h2>Campaigns</h2>
+        <p class="section-subtitle">These rows come from the local <code>publisher_campaign</code> table. Updating opens the existing campaign editor; deleting removes the portal-side campaign configuration and generated bundle.</p>
+      </div>
+      <span class="badge badge--primary">{{ campaign_rows|length }} shown</span>
+    </div>
+
+    <form method="get" class="toolbar">
+      <input type="hidden" name="field_rep_q" value="{{ field_rep_q }}" />
+      <input type="hidden" name="doctor_q" value="{{ doctor_q }}" />
+      <div class="toolbar__grow">
+        <input name="campaign_q" value="{{ campaign_q }}" placeholder="Search campaign ID, cluster, or publisher" />
+      </div>
+      <button type="submit" class="btn btn-secondary">Search</button>
+    </form>
+
+    <div class="table-card">
+      <table>
+        <thead>
+          <tr>
+            <th>Campaign ID</th>
+            <th>Video Cluster</th>
+            <th>Doctors Supported</th>
+            <th>Window</th>
+            <th>Publisher</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for campaign in campaign_rows %}
+            <tr>
+              <td><span class="mono">{{ campaign.campaign_id }}</span></td>
+              <td>{{ campaign.new_video_cluster_name }}</td>
+              <td>{{ campaign.doctors_supported }}</td>
+              <td>{{ campaign.start_date }} to {{ campaign.end_date }}</td>
+              <td>{{ campaign.publisher_username|default:"-" }}</td>
+              <td>
+                <div class="table-actions">
+                  <a class="btn btn-secondary btn-sm" href="{% url 'campaign_publisher:edit_campaign_details' campaign.campaign_id %}">Update</a>
+                  <form method="post" action="{% url 'publisher:campaign_record_delete' campaign.campaign_id %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete this Patient Education campaign configuration?');">Delete</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td class="table-empty" colspan="6">No campaign records found.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card stack-lg">
+    <div class="section-heading">
+      <div class="section-heading__text">
+        <h2>Field Reps</h2>
+        <p class="section-subtitle">These records come directly from the master <code>campaign_fieldrep</code> tables, with linked campaign IDs pulled from the master campaign-field-rep join table.</p>
+      </div>
+      <span class="badge badge--primary">{{ field_rep_rows|length }} shown</span>
+    </div>
+
+    <form method="get" class="toolbar">
+      <input type="hidden" name="campaign_q" value="{{ campaign_q }}" />
+      <input type="hidden" name="doctor_q" value="{{ doctor_q }}" />
+      <div class="toolbar__grow">
+        <input name="field_rep_q" value="{{ field_rep_q }}" placeholder="Search name, phone, external ID, state, or campaign ID" />
+      </div>
+      <button type="submit" class="btn btn-secondary">Search</button>
+    </form>
+
+    <div class="table-card">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Name</th>
+            <th>Brand ID</th>
+            <th>Phone</th>
+            <th>State</th>
+            <th>Campaigns</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for record in field_rep_rows %}
+            <tr>
+              <td>{{ record.id }}</td>
+              <td>{{ record.full_name }}</td>
+              <td>{{ record.brand_supplied_field_rep_id|default:"-" }}</td>
+              <td>{{ record.phone_number|default:"-" }}</td>
+              <td>{{ record.state|default:"-" }}</td>
+              <td>
+                {% if record.linked_campaign_ids %}
+                  <div class="stack-xs">
+                    {% for campaign_id in record.linked_campaign_ids %}
+                      <span class="mono">{{ campaign_id }}</span>
+                    {% endfor %}
+                  </div>
+                {% else %}
+                  <span class="muted">No linked campaigns</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if record.is_active %}
+                  <span class="badge badge--primary">Active</span>
+                {% else %}
+                  <span class="badge">Inactive</span>
+                {% endif %}
+              </td>
+              <td>
+                <div class="table-actions">
+                  <a class="btn btn-secondary btn-sm" href="{% url 'publisher:field_rep_record_edit' record.id %}">Update</a>
+                  <form method="post" action="{% url 'publisher:field_rep_record_delete' record.id %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete this field rep record and unlink it from campaigns?');">Delete</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td class="table-empty" colspan="8">No field rep records found.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card stack-lg">
+    <div class="section-heading">
+      <div class="section-heading__text">
+        <h2>Doctors</h2>
+        <p class="section-subtitle">Doctor details are sourced from master <code>redflags_doctor</code>, while the “Local profile” badge shows whether a portal-side <code>DoctorProfile</code> also exists and will be synced during updates.</p>
+      </div>
+      <span class="badge badge--primary">{{ doctor_rows|length }} shown</span>
+    </div>
+
+    <form method="get" class="toolbar">
+      <input type="hidden" name="campaign_q" value="{{ campaign_q }}" />
+      <input type="hidden" name="field_rep_q" value="{{ field_rep_q }}" />
+      <div class="toolbar__grow">
+        <input name="doctor_q" value="{{ doctor_q }}" placeholder="Search doctor ID, name, email, clinic, state, field rep, or campaign ID" />
+      </div>
+      <button type="submit" class="btn btn-secondary">Search</button>
+    </form>
+
+    <div class="table-card">
+      <table>
+        <thead>
+          <tr>
+            <th>Doctor ID</th>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Clinic</th>
+            <th>State</th>
+            <th>Campaigns</th>
+            <th>Local Profile</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in doctor_rows %}
+            {% with record=row.record %}
+              <tr>
+                <td><span class="mono">{{ record.doctor_id }}</span></td>
+                <td>{{ record.full_name }}</td>
+                <td>{{ record.email|default:"-" }}</td>
+                <td>{{ record.clinic_name|default:"-" }}</td>
+                <td>{{ record.state|default:"-" }}</td>
+                <td>
+                  {% if record.linked_campaign_ids %}
+                    <div class="stack-xs">
+                      {% for campaign_id in record.linked_campaign_ids %}
+                        <span class="mono">{{ campaign_id }}</span>
+                      {% endfor %}
+                    </div>
+                  {% else %}
+                    <span class="muted">No enrollments</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if row.has_local_profile %}
+                    <span class="badge badge--primary">Synced</span>
+                  {% else %}
+                    <span class="badge">Master only</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <div class="table-actions">
+                    <a class="btn btn-secondary btn-sm" href="{% url 'publisher:doctor_record_edit' record.doctor_id %}">Update</a>
+                    <form method="post" action="{% url 'publisher:doctor_record_delete' record.doctor_id %}">
+                      {% csrf_token %}
+                      <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete this doctor from the system?');">Delete</button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+            {% endwith %}
+          {% empty %}
+            <tr><td class="table-empty" colspan="8">No doctor records found.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+{% endblock %}
