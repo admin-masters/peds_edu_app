@@ -183,6 +183,7 @@ def _build_pe_records_context(*, campaign_q: str = "", field_rep_q: str = "", do
         for record in master_campaigns
         if _normalize_campaign_identifier(record.campaign_id)
     }
+    master_campaign_id_list = sorted(master_campaign_ids)
     local_campaign_map = _build_local_campaign_map(master_campaign_ids)
 
     campaign_rows = []
@@ -206,14 +207,8 @@ def _build_pe_records_context(*, campaign_q: str = "", field_rep_q: str = "", do
     local_campaign_ids = set(local_campaign_map.keys())
 
     field_rep_rows = []
-    for record in master_db.list_field_rep_records(field_rep_q):
-        pe_campaign_ids = tuple(
-            campaign_id
-            for campaign_id in record.linked_campaign_ids
-            if _normalize_campaign_identifier(campaign_id) in master_campaign_ids
-        )
-        if not pe_campaign_ids:
-            continue
+    for record in master_db.list_field_rep_records(field_rep_q, campaign_ids=master_campaign_id_list):
+        pe_campaign_ids = tuple(record.linked_campaign_ids)
         field_rep_rows.append(
             {
                 "record": record,
@@ -225,7 +220,7 @@ def _build_pe_records_context(*, campaign_q: str = "", field_rep_q: str = "", do
         )
 
     doctors = []
-    doctor_records = master_db.list_doctor_records(doctor_q)
+    doctor_records = master_db.list_doctor_records(doctor_q, campaign_ids=master_campaign_id_list)
     local_profiles = {
         profile.doctor_id: profile
         for profile in DoctorProfile.objects.select_related("user", "clinic").filter(
@@ -233,13 +228,7 @@ def _build_pe_records_context(*, campaign_q: str = "", field_rep_q: str = "", do
         )
     }
     for record in doctor_records:
-        pe_campaign_ids = tuple(
-            campaign_id
-            for campaign_id in record.linked_campaign_ids
-            if _normalize_campaign_identifier(campaign_id) in master_campaign_ids
-        )
-        if not pe_campaign_ids:
-            continue
+        pe_campaign_ids = tuple(record.linked_campaign_ids)
 
         local_profile = local_profiles.get(record.doctor_id)
         doctors.append(
@@ -360,8 +349,8 @@ def _delete_local_doctor_record(doctor_id: str) -> bool:
     return True
 
 
-def _render_field_rep_record_edit(request, field_rep_id: int, *, redirect_name: str, hub_url: str):
-    record = master_db.get_field_rep_record(field_rep_id)
+def _render_field_rep_record_edit(request, field_rep_id: int, *, redirect_name: str, hub_url: str, record=None):
+    record = record or master_db.get_field_rep_record(field_rep_id)
     if record is None:
         raise Http404("Field rep not found.")
 
@@ -412,8 +401,8 @@ def _delete_field_rep_record_response(request, field_rep_id: int, *, redirect_na
     return redirect(redirect_name)
 
 
-def _render_doctor_record_edit(request, doctor_id: str, *, redirect_name: str, hub_url: str):
-    record = master_db.get_doctor_record(doctor_id)
+def _render_doctor_record_edit(request, doctor_id: str, *, redirect_name: str, hub_url: str, record=None):
+    record = record or master_db.get_doctor_record(doctor_id)
     if record is None:
         raise Http404("Doctor not found.")
 
@@ -649,23 +638,24 @@ def pe_campaign_record_delete(request, campaign_id: str):
 
 @pe_records_required
 def pe_field_rep_record_edit(request, field_rep_id: int):
-    record = master_db.get_field_rep_record(field_rep_id)
     pe_campaign_ids = _get_pe_campaign_id_set()
-    if record is None or not any(_normalize_campaign_identifier(campaign_id) in pe_campaign_ids for campaign_id in record.linked_campaign_ids):
+    record = master_db.get_field_rep_record(field_rep_id, campaign_ids=sorted(pe_campaign_ids))
+    if record is None:
         raise Http404("Field rep not found.")
     return _render_field_rep_record_edit(
         request,
         field_rep_id,
         redirect_name="publisher:pe_records_dashboard",
         hub_url=reverse("publisher:pe_records_dashboard"),
+        record=record,
     )
 
 
 @pe_records_required
 def pe_field_rep_record_delete(request, field_rep_id: int):
-    record = master_db.get_field_rep_record(field_rep_id)
     pe_campaign_ids = _get_pe_campaign_id_set()
-    if record is None or not any(_normalize_campaign_identifier(campaign_id) in pe_campaign_ids for campaign_id in record.linked_campaign_ids):
+    record = master_db.get_field_rep_record(field_rep_id, campaign_ids=sorted(pe_campaign_ids))
+    if record is None:
         raise Http404("Field rep not found.")
     return _delete_field_rep_record_response(
         request,
@@ -676,23 +666,24 @@ def pe_field_rep_record_delete(request, field_rep_id: int):
 
 @pe_records_required
 def pe_doctor_record_edit(request, doctor_id: str):
-    record = master_db.get_doctor_record(doctor_id)
     pe_campaign_ids = _get_pe_campaign_id_set()
-    if record is None or not any(_normalize_campaign_identifier(campaign_id) in pe_campaign_ids for campaign_id in record.linked_campaign_ids):
+    record = master_db.get_doctor_record(doctor_id, campaign_ids=sorted(pe_campaign_ids))
+    if record is None:
         raise Http404("Doctor not found.")
     return _render_doctor_record_edit(
         request,
         doctor_id,
         redirect_name="publisher:pe_records_dashboard",
         hub_url=reverse("publisher:pe_records_dashboard"),
+        record=record,
     )
 
 
 @pe_records_required
 def pe_doctor_record_delete(request, doctor_id: str):
-    record = master_db.get_doctor_record(doctor_id)
     pe_campaign_ids = _get_pe_campaign_id_set()
-    if record is None or not any(_normalize_campaign_identifier(campaign_id) in pe_campaign_ids for campaign_id in record.linked_campaign_ids):
+    record = master_db.get_doctor_record(doctor_id, campaign_ids=sorted(pe_campaign_ids))
+    if record is None:
         raise Http404("Doctor not found.")
     return _delete_doctor_record_response(
         request,
