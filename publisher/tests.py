@@ -76,6 +76,47 @@ class MasterCampaignRecordFormTests(SimpleTestCase):
 
 
 class PEDoctorMatchingTests(SimpleTestCase):
+    def test_pe_activity_matching_prefers_field_rep_aware_match(self) -> None:
+        doctor_indexes = master_db._build_doctor_candidate_indexes(
+            [
+                {
+                    "doctor_id": "DR-PE-1",
+                    "first_name": "Aarav",
+                    "last_name": "Dsouza",
+                    "email": "doctor@example.com",
+                    "whatsapp_no": "9876543210",
+                    "clinic_phone": "",
+                    "clinic_appointment_number": "",
+                    "receptionist_whatsapp_number": "",
+                    "field_rep_id": "FR-PE-1",
+                },
+                {
+                    "doctor_id": "DR-NONPE-1",
+                    "first_name": "Aarav",
+                    "last_name": "Dsouza",
+                    "email": "doctor@example.com",
+                    "whatsapp_no": "9876543210",
+                    "clinic_phone": "",
+                    "clinic_appointment_number": "",
+                    "receptionist_whatsapp_number": "",
+                    "field_rep_id": "FR-NONPE-1",
+                },
+            ]
+        )
+
+        matched_doctor_id = master_db._match_pe_activity_row_to_doctor(
+            {
+                "doctor_id": "",
+                "email": "doctor@example.com",
+                "phone": "9876543210",
+                "full_name": "Aarav Dsouza",
+                "rep_brand_id": "FR-PE-1",
+            },
+            doctor_indexes,
+        )
+
+        self.assertEqual(matched_doctor_id, "DR-PE-1")
+
     def test_named_support_phone_match_excludes_unrelated_doctors(self) -> None:
         doctor_indexes = master_db._build_doctor_candidate_indexes(
             [
@@ -153,8 +194,8 @@ class PEDoctorMatchingTests(SimpleTestCase):
 
 class PERecordsContextTests(SimpleTestCase):
     @patch("publisher.views.DoctorProfile.objects")
-    @patch("publisher.views.master_db.list_doctor_records")
-    @patch("publisher.views.master_db.list_field_rep_records")
+    @patch("publisher.views.master_db.list_pe_doctor_records")
+    @patch("publisher.views.master_db.list_pe_field_rep_records")
     @patch("publisher.views._build_local_campaign_map")
     @patch("publisher.views._get_pe_master_campaign_records")
     def test_people_queries_are_scoped_to_pe_campaign_ids(
