@@ -4,6 +4,7 @@ from typing import Optional
 
 from django import forms
 from django.core.exceptions import ValidationError
+from django.core.validators import RegexValidator
 from django.db.models import Q
 from django.forms import inlineformset_factory
 from django.forms.models import BaseInlineFormSet
@@ -221,3 +222,110 @@ class VideoTriggerMapForm(forms.ModelForm):
     class Meta:
         model = VideoTriggerMap
         fields = ["trigger", "video", "is_primary", "sort_order"]
+
+
+_digits_or_blank = RegexValidator(r"^\d*$", "Digits only.")
+_postal_code_validator = RegexValidator(r"^(\d{6})?$", "PIN must be 6 digits.")
+
+
+class FieldRepRecordForm(forms.Form):
+    full_name = forms.CharField(max_length=255, required=True, label="Full name")
+    phone_number = forms.CharField(max_length=30, required=True, label="Phone number")
+    brand_supplied_field_rep_id = forms.CharField(
+        max_length=80,
+        required=True,
+        label="Brand field rep ID",
+    )
+    state = forms.CharField(max_length=255, required=False, label="State")
+    is_active = forms.BooleanField(required=False, label="Active")
+
+    def clean(self):
+        cleaned = super().clean()
+        for key in ("full_name", "phone_number", "brand_supplied_field_rep_id", "state"):
+            if key in cleaned:
+                cleaned[key] = (cleaned.get(key) or "").strip()
+        return cleaned
+
+
+class DoctorRecordForm(forms.Form):
+    first_name = forms.CharField(max_length=100, required=True, label="First name")
+    last_name = forms.CharField(max_length=100, required=False, label="Last name")
+    email = forms.EmailField(required=True, label="Email")
+    whatsapp_no = forms.CharField(
+        max_length=20,
+        required=False,
+        label="Doctor WhatsApp",
+        validators=[_digits_or_blank],
+    )
+    clinic_name = forms.CharField(max_length=255, required=True, label="Clinic name")
+    clinic_phone = forms.CharField(
+        max_length=20,
+        required=False,
+        label="Clinic phone",
+        validators=[_digits_or_blank],
+    )
+    clinic_appointment_number = forms.CharField(
+        max_length=20,
+        required=False,
+        label="Appointment phone",
+        validators=[_digits_or_blank],
+    )
+    clinic_address = forms.CharField(
+        required=False,
+        label="Clinic address",
+        widget=forms.Textarea(attrs={"rows": 4}),
+    )
+    postal_code = forms.CharField(
+        max_length=6,
+        required=False,
+        label="Postal code",
+        validators=[_postal_code_validator],
+    )
+    state = forms.CharField(max_length=64, required=False, label="State")
+    district = forms.CharField(max_length=100, required=False, label="District")
+    receptionist_whatsapp_number = forms.CharField(
+        max_length=20,
+        required=False,
+        label="Clinic WhatsApp",
+        validators=[_digits_or_blank],
+    )
+    imc_registration_number = forms.CharField(
+        max_length=30,
+        required=False,
+        label="IMC registration number",
+        validators=[_digits_or_blank],
+    )
+    field_rep_id = forms.CharField(max_length=64, required=False, label="Field rep ID")
+    recruited_via = forms.CharField(max_length=20, required=False, label="Recruited via")
+    clinic_user1_name = forms.CharField(max_length=120, required=False, label="Clinic user 1 name")
+    clinic_user1_email = forms.EmailField(required=False, label="Clinic user 1 email")
+    clinic_user2_name = forms.CharField(max_length=120, required=False, label="Clinic user 2 name")
+    clinic_user2_email = forms.EmailField(required=False, label="Clinic user 2 email")
+
+    def clean(self):
+        cleaned = super().clean()
+        for key in (
+            "first_name",
+            "last_name",
+            "clinic_name",
+            "clinic_phone",
+            "clinic_appointment_number",
+            "clinic_address",
+            "postal_code",
+            "state",
+            "district",
+            "receptionist_whatsapp_number",
+            "imc_registration_number",
+            "field_rep_id",
+            "recruited_via",
+            "clinic_user1_name",
+            "clinic_user2_name",
+        ):
+            if key in cleaned:
+                cleaned[key] = (cleaned.get(key) or "").strip()
+
+        for key in ("email", "clinic_user1_email", "clinic_user2_email"):
+            if key in cleaned:
+                cleaned[key] = (cleaned.get(key) or "").strip().lower()
+
+        return cleaned

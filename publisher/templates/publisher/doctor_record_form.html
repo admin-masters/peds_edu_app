@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Doctor{% endblock %}
+{% block header_title %}Edit Doctor{% endblock %}
+
+{% block content %}
+<div class="page-shell page-shell--narrow">
+  <section class="card stack-lg">
+    <div class="section-heading">
+      <div class="section-heading__text">
+        <h2>Edit Doctor</h2>
+        <p class="section-subtitle">Master doctor fields are editable here. If a local <code>DoctorProfile</code> exists, the portal-side user and clinic details will also be synced.</p>
+      </div>
+      <a class="btn btn-secondary" href="{% url 'publisher:system_records' %}">Back to hub</a>
+    </div>
+
+    <div class="read-only-panel stack-sm">
+      <div><strong>Doctor ID:</strong> <span class="mono">{{ record.doctor_id }}</span></div>
+      <div><strong>Campaign enrollments:</strong>
+        {% if record.linked_campaign_ids %}
+          {% for campaign_id in record.linked_campaign_ids %}
+            <span class="mono">{{ campaign_id }}</span>{% if not forloop.last %}, {% endif %}
+          {% endfor %}
+        {% else %}
+          <span class="muted">No enrollments</span>
+        {% endif %}
+      </div>
+      <div><strong>Local portal profile:</strong>
+        {% if has_local_profile %}
+          <span class="badge badge--primary">Available</span>
+        {% else %}
+          <span class="badge">Master only</span>
+        {% endif %}
+      </div>
+    </div>
+
+    <form method="post" class="generated-form">
+      {% csrf_token %}
+
+      {% if form.non_field_errors %}
+        <div class="message error">{{ form.non_field_errors }}</div>
+      {% endif %}
+
+      {{ form.as_p }}
+
+      <div class="form-actions">
+        <button type="submit">Save changes</button>
+        <a class="btn btn-secondary" href="{% url 'publisher:system_records' %}">Cancel</a>
+      </div>
+    </form>
+  </section>
+</div>
+{% endblock %}

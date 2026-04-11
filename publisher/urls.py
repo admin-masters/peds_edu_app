@@ -5,6 +5,32 @@ app_name = "publisher"
 
 urlpatterns = [
     path("", views.dashboard, name="dashboard"),
+    path("system-records/", views.system_records, name="system_records"),
+    path(
+        "system-records/campaigns/<str:campaign_id>/delete/",
+        views.campaign_record_delete,
+        name="campaign_record_delete",
+    ),
+    path(
+        "system-records/field-reps/<int:field_rep_id>/",
+        views.field_rep_record_edit,
+        name="field_rep_record_edit",
+    ),
+    path(
+        "system-records/field-reps/<int:field_rep_id>/delete/",
+        views.field_rep_record_delete,
+        name="field_rep_record_delete",
+    ),
+    path(
+        "system-records/doctors/<str:doctor_id>/",
+        views.doctor_record_edit,
+        name="doctor_record_edit",
+    ),
+    path(
+        "system-records/doctors/<str:doctor_id>/delete/",
+        views.doctor_record_delete,
+        name="doctor_record_delete",
+    ),
 
     # Therapy Areas
     path("therapy-areas/", views.therapy_list, name="therapy_list"),
