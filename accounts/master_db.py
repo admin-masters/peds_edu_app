@@ -5,7 +5,7 @@ import json
 import re
 import time
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Sequence
 from urllib.parse import quote
 
 from django.conf import settings
@@ -1639,6 +1639,138 @@ def _split_grouped_values(raw_value: str) -> tuple[str, ...]:
     return tuple(items)
 
 
+def _normalize_campaign_id_list(campaign_ids: Optional[Sequence[str]]) -> tuple[str, ...]:
+    if campaign_ids is None:
+        return ()
+
+    normalized_ids = []
+    seen = set()
+    for raw in campaign_ids:
+        campaign_id = normalize_campaign_id(str(raw or ""))
+        if not campaign_id or campaign_id in seen:
+            continue
+        seen.add(campaign_id)
+        normalized_ids.append(campaign_id)
+    return tuple(normalized_ids)
+
+
+def _normalize_match_name(value: str) -> str:
+    return re.sub(r"\s+", " ", str(value or "").strip()).lower()
+
+
+def _doctor_row_full_name(row: dict[str, object]) -> str:
+    full_name = str(row.get("full_name") or "").strip()
+    if full_name:
+        return full_name
+    return f"{row.get('first_name') or ''} {row.get('last_name') or ''}".strip()
+
+
+def _doctor_row_personal_phone_tokens(row: dict[str, object]) -> set[str]:
+    return _phone_lookup_tokens(
+        str(row.get("whatsapp_no") or ""),
+        str(row.get("phone") or ""),
+    )
+
+
+def _doctor_row_support_phone_tokens(row: dict[str, object]) -> set[str]:
+    return _phone_lookup_tokens(
+        str(row.get("receptionist_whatsapp_number") or ""),
+        str(row.get("clinic_appointment_number") or ""),
+        str(row.get("clinic_phone") or ""),
+    )
+
+
+def _build_doctor_candidate_indexes(doctor_rows: list[dict[str, object]]) -> dict[str, dict[object, set[str]]]:
+    email_index: dict[str, set[str]] = {}
+    email_name_index: dict[tuple[str, str], set[str]] = {}
+    phone_index: dict[str, set[str]] = {}
+    phone_name_index: dict[tuple[str, str], set[str]] = {}
+
+    for row in doctor_rows:
+        doctor_id = str(row.get("doctor_id") or "").strip()
+        if not doctor_id:
+            continue
+
+        email = str(row.get("email") or "").strip().lower()
+        full_name = _normalize_match_name(_doctor_row_full_name(row))
+
+        if email:
+            email_index.setdefault(email, set()).add(doctor_id)
+            if full_name:
+                email_name_index.setdefault((email, full_name), set()).add(doctor_id)
+
+        personal_phone_tokens = _doctor_row_personal_phone_tokens(row)
+        named_phone_tokens = set(personal_phone_tokens)
+        named_phone_tokens.update(_doctor_row_support_phone_tokens(row))
+
+        for token in personal_phone_tokens:
+            phone_index.setdefault(token, set()).add(doctor_id)
+
+        if full_name:
+            for token in named_phone_tokens:
+                phone_name_index.setdefault((token, full_name), set()).add(doctor_id)
+
+    return {
+        "email": email_index,
+        "email_name": email_name_index,
+        "phone": phone_index,
+        "phone_name": phone_name_index,
+    }
+
+
+def _match_campaign_doctor_row_to_master_doctor(
+    campaign_row: dict[str, object],
+    doctor_indexes: dict[str, dict[object, set[str]]],
+) -> Optional[str]:
+    email = str(campaign_row.get("email") or "").strip().lower()
+    full_name = _normalize_match_name(str(campaign_row.get("full_name") or ""))
+    phone_tokens = _phone_lookup_tokens(str(campaign_row.get("phone") or ""))
+
+    candidate_sets: list[set[str]] = []
+
+    if email and full_name:
+        email_name_matches = set(doctor_indexes["email_name"].get((email, full_name), set()))
+        if len(email_name_matches) == 1:
+            return next(iter(email_name_matches))
+        if email_name_matches:
+            candidate_sets.append(email_name_matches)
+
+    if email:
+        email_matches = set(doctor_indexes["email"].get(email, set()))
+        if len(email_matches) == 1:
+            return next(iter(email_matches))
+        if email_matches:
+            candidate_sets.append(email_matches)
+
+    if full_name and phone_tokens:
+        phone_name_matches: set[str] = set()
+        for token in phone_tokens:
+            phone_name_matches.update(doctor_indexes["phone_name"].get((token, full_name), set()))
+        if len(phone_name_matches) == 1:
+            return next(iter(phone_name_matches))
+        if phone_name_matches:
+            candidate_sets.append(phone_name_matches)
+
+    if phone_tokens:
+        phone_matches: set[str] = set()
+        for token in phone_tokens:
+            phone_matches.update(doctor_indexes["phone"].get(token, set()))
+        if len(phone_matches) == 1:
+            return next(iter(phone_matches))
+        if phone_matches:
+            candidate_sets.append(phone_matches)
+
+    non_empty_candidates = [candidates for candidates in candidate_sets if candidates]
+    if len(non_empty_candidates) >= 2:
+        intersection = set(non_empty_candidates[0])
+        for candidates in non_empty_candidates[1:]:
+            intersection &= candidates
+        if len(intersection) == 1:
+            return next(iter(intersection))
+
+    return None
+
+
 @dataclass(frozen=True)
 class MasterFieldRepRecord:
     id: int
@@ -1654,12 +1786,13 @@ class MasterFieldRepRecord:
     linked_campaign_ids: tuple[str, ...] = ()
 
 
-def list_field_rep_records(search: str = "") -> list[MasterFieldRepRecord]:
+def list_field_rep_records(search: str = "", campaign_ids: Optional[Sequence[str]] = None) -> list[MasterFieldRepRecord]:
     conn = get_master_connection()
     table = getattr(settings, "MASTER_DB_FIELD_REP_TABLE", "campaign_fieldrep")
     join_table = getattr(settings, "MASTER_DB_CAMPAIGN_FIELD_REP_TABLE", "campaign_campaignfieldrep")
     cols = _get_table_columns(conn, table)
     join_cols = _get_table_columns(conn, join_table)
+    campaign_id_filter = _normalize_campaign_id_list(campaign_ids)
     id_col = _pick_first_column(cols, ["id"])
     name_col = _pick_first_column(cols, ["full_name", "name"])
     phone_col = _pick_first_column(cols, ["phone_number", "phone"])
@@ -1691,8 +1824,16 @@ def list_field_rep_records(search: str = "") -> list[MasterFieldRepRecord]:
         else "NULL"
     )
 
-    where_sql = ""
+    if campaign_ids is not None and (not join_field_rep_col or not join_campaign_col or not campaign_id_filter):
+        return []
+
+    where_clauses: list[str] = []
     params: list[object] = []
+    if campaign_id_filter:
+        placeholders = ", ".join(["%s"] * len(campaign_id_filter))
+        where_clauses.append(f"{qcol('cfr', join_campaign_col)} IN ({placeholders})")
+        params.extend(campaign_id_filter)
+
     term = (search or "").strip().lower()
     if term:
         like = f"%{term}%"
@@ -1713,11 +1854,9 @@ def list_field_rep_records(search: str = "") -> list[MasterFieldRepRecord]:
             search_parts.append("LOWER(COALESCE({0}, '')) LIKE %s".format(state_expr))
             params.append(like)
         if search_parts:
-            where_sql = f"""
-                WHERE (
-                    {" OR ".join(search_parts)}
-                )
-            """
+            where_clauses.append(f"({' OR '.join(search_parts)})")
+
+    where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
     sql = f"""
         SELECT
@@ -1773,12 +1912,12 @@ def list_field_rep_records(search: str = "") -> list[MasterFieldRepRecord]:
     return records
 
 
-def get_field_rep_record(field_rep_id) -> Optional[MasterFieldRepRecord]:
+def get_field_rep_record(field_rep_id, campaign_ids: Optional[Sequence[str]] = None) -> Optional[MasterFieldRepRecord]:
     raw = str(field_rep_id or "").strip()
     if not raw.isdigit():
         return None
     target = int(raw)
-    for record in list_field_rep_records():
+    for record in list_field_rep_records(campaign_ids=campaign_ids):
         if record.id == target:
             return record
     return None
@@ -1973,17 +2112,27 @@ def _fetch_master_doctor_rows(conn) -> list[dict[str, object]]:
     return [dict(zip(row_keys, row)) for row in rows]
 
 
-def _resolve_campaign_doctor_ids_for_doctor_rows(conn, doctor_rows: list[dict[str, object]]) -> dict[str, list[int]]:
+def _resolve_campaign_doctor_ids_for_doctor_rows(
+    conn,
+    doctor_rows: list[dict[str, object]],
+    campaign_ids: Optional[Sequence[str]] = None,
+) -> dict[str, list[int]]:
     mapping: dict[str, list[int]] = {}
     if not doctor_rows:
         return mapping
 
     table = "campaign_doctor"
+    enrollment_table = "campaign_doctorcampaignenrollment"
     cols = _get_table_columns(conn, table)
+    enrollment_cols = _get_table_columns(conn, enrollment_table)
+    campaign_id_filter = _normalize_campaign_id_list(campaign_ids)
     id_col = _pick_first_column(cols, ["id"])
     doctor_id_col = _pick_first_column(cols, ["doctor_id"])
     email_col = _pick_first_column(cols, ["email"])
     phone_col = _pick_first_column(cols, ["phone"])
+    full_name_col = _pick_first_column(cols, ["full_name", "name"])
+    enrollment_doctor_col = _pick_first_column(enrollment_cols, ["doctor_id"])
+    enrollment_campaign_col = _pick_first_column(enrollment_cols, ["campaign_id"])
 
     if not id_col:
         return mapping
@@ -1993,15 +2142,31 @@ def _resolve_campaign_doctor_ids_for_doctor_rows(conn, doctor_rows: list[dict[st
         if not doctor_ids:
             return mapping
 
-        placeholders = ", ".join(["%s"] * len(doctor_ids))
+        doctor_placeholders = ", ".join(["%s"] * len(doctor_ids))
+        where_clauses = [f"{qcol('cd', doctor_id_col)} IN ({doctor_placeholders})"]
+        params: list[object] = list(doctor_ids)
+        join_sql = ""
+
+        if campaign_id_filter:
+            if not enrollment_doctor_col or not enrollment_campaign_col:
+                return mapping
+            campaign_placeholders = ", ".join(["%s"] * len(campaign_id_filter))
+            join_sql = (
+                f" INNER JOIN {qn(enrollment_table)} en"
+                f" ON {qcol('en', enrollment_doctor_col)} = {qcol('cd', id_col)}"
+            )
+            where_clauses.append(f"{qcol('en', enrollment_campaign_col)} IN ({campaign_placeholders})")
+            params.extend(campaign_id_filter)
+
         with conn.cursor() as cur:
             cur.execute(
                 f"""
-                SELECT {qn(id_col)}, {qn(doctor_id_col)}
-                FROM {qn(table)}
-                WHERE {qn(doctor_id_col)} IN ({placeholders})
+                SELECT DISTINCT {qcol('cd', id_col)}, {qcol('cd', doctor_id_col)}
+                FROM {qn(table)} cd
+                {join_sql}
+                WHERE {' AND '.join(where_clauses)}
                 """,
-                doctor_ids,
+                params,
             )
             rows = cur.fetchall() or []
 
@@ -2012,58 +2177,103 @@ def _resolve_campaign_doctor_ids_for_doctor_rows(conn, doctor_rows: list[dict[st
             mapping.setdefault(doctor_id, []).append(int(row[0]))
         return mapping
 
-    select_parts = [qn(id_col)]
+    if campaign_id_filter and (not enrollment_doctor_col or not enrollment_campaign_col):
+        return mapping
+
+    select_parts = [f"{qcol('cd', id_col)}"]
     if email_col:
-        select_parts.append(qn(email_col))
+        select_parts.append(f"{qcol('cd', email_col)}")
     else:
         select_parts.append("''")
     if phone_col:
-        select_parts.append(qn(phone_col))
+        select_parts.append(f"{qcol('cd', phone_col)}")
+    else:
+        select_parts.append("''")
+    if full_name_col:
+        select_parts.append(f"{qcol('cd', full_name_col)}")
     else:
         select_parts.append("''")
 
+    join_sql = ""
+    params = []
+    if campaign_id_filter:
+        placeholders = ", ".join(["%s"] * len(campaign_id_filter))
+        join_sql = (
+            f" INNER JOIN {qn(enrollment_table)} en"
+            f" ON {qcol('en', enrollment_doctor_col)} = {qcol('cd', id_col)}"
+        )
+        params.extend(campaign_id_filter)
+
     with conn.cursor() as cur:
-        cur.execute(f"SELECT {', '.join(select_parts)} FROM {qn(table)}")
+        cur.execute(
+            f"""
+            SELECT DISTINCT {', '.join(select_parts)}
+            FROM {qn(table)} cd
+            {join_sql}
+            {f"WHERE {qcol('en', enrollment_campaign_col)} IN ({placeholders})" if campaign_id_filter else ""}
+            """,
+            params,
+        )
         campaign_rows = cur.fetchall() or []
 
-    email_to_doctor_ids: dict[str, set[str]] = {}
-    phone_to_doctor_ids: dict[str, set[str]] = {}
-    for row in doctor_rows:
-        doctor_id = str(row.get("doctor_id") or "").strip()
-        if not doctor_id:
-            continue
+    if not campaign_id_filter:
+        email_to_doctor_ids: dict[str, set[str]] = {}
+        phone_to_doctor_ids: dict[str, set[str]] = {}
+        for row in doctor_rows:
+            doctor_id = str(row.get("doctor_id") or "").strip()
+            if not doctor_id:
+                continue
 
-        email = str(row.get("email") or "").strip().lower()
-        if email:
-            email_to_doctor_ids.setdefault(email, set()).add(doctor_id)
+            email = str(row.get("email") or "").strip().lower()
+            if email:
+                email_to_doctor_ids.setdefault(email, set()).add(doctor_id)
 
-        for token in _phone_lookup_tokens(
-            str(row.get("whatsapp_no") or ""),
-            str(row.get("receptionist_whatsapp_number") or ""),
-            str(row.get("clinic_appointment_number") or ""),
-            str(row.get("clinic_phone") or ""),
-        ):
-            phone_to_doctor_ids.setdefault(token, set()).add(doctor_id)
+            for token in _phone_lookup_tokens(
+                str(row.get("whatsapp_no") or ""),
+                str(row.get("receptionist_whatsapp_number") or ""),
+                str(row.get("clinic_appointment_number") or ""),
+                str(row.get("clinic_phone") or ""),
+            ):
+                phone_to_doctor_ids.setdefault(token, set()).add(doctor_id)
 
+        for row in campaign_rows:
+            campaign_doctor_id = int(row[0])
+            matched_doctor_ids: set[str] = set()
+
+            email = str(row[1] or "").strip().lower()
+            if email and email in email_to_doctor_ids:
+                matched_doctor_ids.update(email_to_doctor_ids[email])
+
+            for token in _phone_lookup_tokens(str(row[2] or "")):
+                if token in phone_to_doctor_ids:
+                    matched_doctor_ids.update(phone_to_doctor_ids[token])
+
+            for doctor_id in matched_doctor_ids:
+                mapping.setdefault(doctor_id, []).append(campaign_doctor_id)
+        return mapping
+
+    doctor_indexes = _build_doctor_candidate_indexes(doctor_rows)
     for row in campaign_rows:
         campaign_doctor_id = int(row[0])
-        matched_doctor_ids: set[str] = set()
-
-        email = str(row[1] or "").strip().lower()
-        if email and email in email_to_doctor_ids:
-            matched_doctor_ids.update(email_to_doctor_ids[email])
-
-        for token in _phone_lookup_tokens(str(row[2] or "")):
-            if token in phone_to_doctor_ids:
-                matched_doctor_ids.update(phone_to_doctor_ids[token])
-
-        for doctor_id in matched_doctor_ids:
-            mapping.setdefault(doctor_id, []).append(campaign_doctor_id)
+        matched_doctor_id = _match_campaign_doctor_row_to_master_doctor(
+            {
+                "email": row[1],
+                "phone": row[2],
+                "full_name": row[3],
+            },
+            doctor_indexes,
+        )
+        if matched_doctor_id:
+            mapping.setdefault(matched_doctor_id, []).append(campaign_doctor_id)
 
     return mapping
 
 
-def _fetch_enrollment_map(conn, campaign_doctor_ids: list[int]) -> dict[int, tuple[str, ...]]:
+def _fetch_enrollment_map(
+    conn,
+    campaign_doctor_ids: list[int],
+    campaign_ids: Optional[Sequence[str]] = None,
+) -> dict[int, tuple[str, ...]]:
     if not campaign_doctor_ids:
         return {}
 
@@ -2074,16 +2284,24 @@ def _fetch_enrollment_map(conn, campaign_doctor_ids: list[int]) -> dict[int, tup
     if not doctor_id_col or not campaign_id_col:
         return {}
 
+    campaign_id_filter = _normalize_campaign_id_list(campaign_ids)
     placeholders = ", ".join(["%s"] * len(campaign_doctor_ids))
+    where_clauses = [f"{qn(doctor_id_col)} IN ({placeholders})"]
+    params: list[object] = list(campaign_doctor_ids)
+    if campaign_id_filter:
+        campaign_placeholders = ", ".join(["%s"] * len(campaign_id_filter))
+        where_clauses.append(f"{qn(campaign_id_col)} IN ({campaign_placeholders})")
+        params.extend(campaign_id_filter)
+
     with conn.cursor() as cur:
         cur.execute(
             f"""
             SELECT {qn(doctor_id_col)}, {qn(campaign_id_col)}
             FROM {qn(table)}
-            WHERE {qn(doctor_id_col)} IN ({placeholders})
+            WHERE {' AND '.join(where_clauses)}
             ORDER BY {qn(doctor_id_col)}, {qn(campaign_id_col)}
             """,
-            campaign_doctor_ids,
+            params,
         )
         rows = cur.fetchall() or []
 
@@ -2132,6 +2350,7 @@ def _doctor_record_matches_search(record: MasterDoctorRecord, term: str) -> bool
 def _doctor_record_to_lookup_row(record: MasterDoctorRecord) -> dict[str, object]:
     return {
         "doctor_id": record.doctor_id,
+        "full_name": record.full_name,
         "email": record.email,
         "whatsapp_no": record.whatsapp_no,
         "receptionist_whatsapp_number": record.receptionist_whatsapp_number,
@@ -2140,13 +2359,21 @@ def _doctor_record_to_lookup_row(record: MasterDoctorRecord) -> dict[str, object
     }
 
 
-def list_doctor_records(search: str = "") -> list[MasterDoctorRecord]:
+def list_doctor_records(search: str = "", campaign_ids: Optional[Sequence[str]] = None) -> list[MasterDoctorRecord]:
     conn = get_master_connection()
     doctor_rows = _fetch_master_doctor_rows(conn)
-    campaign_doctor_ids_by_doctor = _resolve_campaign_doctor_ids_for_doctor_rows(conn, doctor_rows)
+    campaign_id_filter = _normalize_campaign_id_list(campaign_ids)
+    if campaign_ids is not None and not campaign_id_filter:
+        return []
+    campaign_doctor_ids_by_doctor = _resolve_campaign_doctor_ids_for_doctor_rows(
+        conn,
+        doctor_rows,
+        campaign_ids=campaign_id_filter or None,
+    )
     enrollment_map = _fetch_enrollment_map(
         conn,
         sorted({campaign_doctor_id for values in campaign_doctor_ids_by_doctor.values() for campaign_doctor_id in values}),
+        campaign_ids=campaign_id_filter or None,
     )
 
     records: list[MasterDoctorRecord] = []
@@ -2157,6 +2384,9 @@ def list_doctor_records(search: str = "") -> list[MasterDoctorRecord]:
             for campaign_id in enrollment_map.get(campaign_doctor_id, ()):
                 if campaign_id not in linked_campaign_ids:
                     linked_campaign_ids.append(campaign_id)
+
+        if campaign_id_filter and not linked_campaign_ids:
+            continue
 
         record = MasterDoctorRecord(
             doctor_id=doctor_id,
@@ -2191,11 +2421,11 @@ def list_doctor_records(search: str = "") -> list[MasterDoctorRecord]:
     return records
 
 
-def get_doctor_record(doctor_id: str) -> Optional[MasterDoctorRecord]:
+def get_doctor_record(doctor_id: str, campaign_ids: Optional[Sequence[str]] = None) -> Optional[MasterDoctorRecord]:
     target = str(doctor_id or "").strip()
     if not target:
         return None
-    for record in list_doctor_records():
+    for record in list_doctor_records(campaign_ids=campaign_ids):
         if record.doctor_id == target:
             return record
     return None
