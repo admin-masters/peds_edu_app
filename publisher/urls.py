@@ -5,6 +5,65 @@ app_name = "publisher"
 
 urlpatterns = [
     path("", views.dashboard, name="dashboard"),
+    path("pe-system/login/", views.pe_records_login, name="pe_records_login"),
+    path("pe-system/logout/", views.pe_records_logout, name="pe_records_logout"),
+    path("pe-system/", views.pe_records_dashboard, name="pe_records_dashboard"),
+    path(
+        "pe-system/campaigns/<str:campaign_id>/",
+        views.pe_campaign_record_edit,
+        name="pe_campaign_record_edit",
+    ),
+    path(
+        "pe-system/campaigns/<str:campaign_id>/delete/",
+        views.pe_campaign_record_delete,
+        name="pe_campaign_record_delete",
+    ),
+    path(
+        "pe-system/field-reps/<int:field_rep_id>/",
+        views.pe_field_rep_record_edit,
+        name="pe_field_rep_record_edit",
+    ),
+    path(
+        "pe-system/field-reps/<int:field_rep_id>/delete/",
+        views.pe_field_rep_record_delete,
+        name="pe_field_rep_record_delete",
+    ),
+    path(
+        "pe-system/doctors/<str:doctor_id>/",
+        views.pe_doctor_record_edit,
+        name="pe_doctor_record_edit",
+    ),
+    path(
+        "pe-system/doctors/<str:doctor_id>/delete/",
+        views.pe_doctor_record_delete,
+        name="pe_doctor_record_delete",
+    ),
+    path("system-records/", views.system_records, name="system_records"),
+    path(
+        "system-records/campaigns/<str:campaign_id>/delete/",
+        views.campaign_record_delete,
+        name="campaign_record_delete",
+    ),
+    path(
+        "system-records/field-reps/<int:field_rep_id>/",
+        views.field_rep_record_edit,
+        name="field_rep_record_edit",
+    ),
+    path(
+        "system-records/field-reps/<int:field_rep_id>/delete/",
+        views.field_rep_record_delete,
+        name="field_rep_record_delete",
+    ),
+    path(
+        "system-records/doctors/<str:doctor_id>/",
+        views.doctor_record_edit,
+        name="doctor_record_edit",
+    ),
+    path(
+        "system-records/doctors/<str:doctor_id>/delete/",
+        views.doctor_record_delete,
+        name="doctor_record_delete",
+    ),
 
     # Therapy Areas
     path("therapy-areas/", views.therapy_list, name="therapy_list"),

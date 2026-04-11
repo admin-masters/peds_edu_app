@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}PE Records Login{% endblock %}
+{% block header_title %}PE Records Login{% endblock %}
+
+{% block content %}
+<div class="page-shell page-shell--auth">
+  <section class="card hero-card stack-lg">
+    <div class="section-heading__text">
+      <h2>PE System Records</h2>
+      <p class="section-subtitle">Use this dedicated access page for Patient Education system-level records. Standard publisher login does not unlock this dashboard.</p>
+    </div>
+
+    <form method="post" class="form-stack">
+      {% csrf_token %}
+
+      {% if form.non_field_errors %}
+        <div class="message error">{{ form.non_field_errors }}</div>
+      {% endif %}
+
+      <div class="field-group">
+        <label for="{{ form.email.id_for_label }}">Email</label>
+        {{ form.email }}
+        {{ form.email.errors }}
+      </div>
+
+      <div class="field-group">
+        <label for="{{ form.password.id_for_label }}">Password</label>
+        {{ form.password }}
+        {{ form.password.errors }}
+      </div>
+
+      <button type="submit" class="btn btn-block">Open PE Records Dashboard</button>
+    </form>
+  </section>
+</div>
+{% endblock %}
