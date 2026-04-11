@@ -11,7 +11,7 @@
         <h2>Edit Field Rep</h2>
         <p class="section-subtitle">This updates the master <code>campaign_fieldrep</code> record and keeps the linked campaign assignments intact.</p>
       </div>
-      <a class="btn btn-secondary" href="{% url 'publisher:system_records' %}">Back to hub</a>
+      <a class="btn btn-secondary" href="{{ hub_url }}">Back to hub</a>
     </div>
 
     <div class="read-only-panel stack-sm">
@@ -38,7 +38,7 @@
 
       <div class="form-actions">
         <button type="submit">Save changes</button>
-        <a class="btn btn-secondary" href="{% url 'publisher:system_records' %}">Cancel</a>
+        <a class="btn btn-secondary" href="{{ hub_url }}">Cancel</a>
       </div>
     </form>
   </section>

@@ -11,7 +11,7 @@
         <h2>Edit Doctor</h2>
         <p class="section-subtitle">Master doctor fields are editable here. If a local <code>DoctorProfile</code> exists, the portal-side user and clinic details will also be synced.</p>
       </div>
-      <a class="btn btn-secondary" href="{% url 'publisher:system_records' %}">Back to hub</a>
+      <a class="btn btn-secondary" href="{{ hub_url }}">Back to hub</a>
     </div>
 
     <div class="read-only-panel stack-sm">
@@ -45,7 +45,7 @@
 
       <div class="form-actions">
         <button type="submit">Save changes</button>
-        <a class="btn btn-secondary" href="{% url 'publisher:system_records' %}">Cancel</a>
+        <a class="btn btn-secondary" href="{{ hub_url }}">Cancel</a>
       </div>
     </form>
   </section>
