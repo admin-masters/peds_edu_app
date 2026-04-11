@@ -1049,6 +1049,297 @@ def get_campaign(campaign_id: str) -> Optional[MasterCampaign]:
     )
 
 
+@dataclass(frozen=True)
+class MasterCampaignRecord:
+    campaign_id: str
+    name: str
+    num_doctors_supported: int
+    add_to_campaign_message: str
+    register_message: str
+    banner_small_url: str
+    banner_large_url: str
+    banner_target_url: str
+    brand_id: Optional[int]
+    system_pe: bool
+    start_date: object
+    created_at: object
+    enrolled_doctor_count: int = 0
+    field_rep_count: int = 0
+
+
+def _coerce_db_bool(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return str(value).strip().lower() in {"1", "true", "t", "yes", "y"}
+
+
+def _fetch_campaign_relation_count_map(conn, table: str, campaign_ids: list[str]) -> dict[str, int]:
+    normalized_ids = []
+    for raw in campaign_ids:
+        cid = normalize_campaign_id(str(raw or ""))
+        if cid and cid not in normalized_ids:
+            normalized_ids.append(cid)
+    if not normalized_ids:
+        return {}
+
+    cols = _get_table_columns(conn, table)
+    campaign_col = _pick_first_column(cols, ["campaign_id"])
+    if not campaign_col:
+        return {}
+
+    placeholders = ", ".join(["%s"] * len(normalized_ids))
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT {qn(campaign_col)}, COUNT(*)
+            FROM {qn(table)}
+            WHERE {qn(campaign_col)} IN ({placeholders})
+            GROUP BY {qn(campaign_col)}
+            """,
+            normalized_ids,
+        )
+        rows = cur.fetchall() or []
+
+    return {str(row[0] or "").strip(): int(row[1] or 0) for row in rows if row and row[0]}
+
+
+def list_master_campaign_records(search: str = "", pe_only: Optional[bool] = True) -> list[MasterCampaignRecord]:
+    conn = get_master_connection()
+    table = getattr(settings, "MASTER_DB_CAMPAIGN_TABLE", "campaign_campaign")
+    cols = _get_table_columns(conn, table)
+
+    field_candidates = [
+        ("campaign_id", ["id"], "''"),
+        ("name", ["name"], "''"),
+        ("num_doctors_supported", ["num_doctors_supported"], "0"),
+        ("add_to_campaign_message", ["add_to_campaign_message"], "''"),
+        ("register_message", ["register_message"], "''"),
+        ("banner_small_url", ["banner_small_url"], "''"),
+        ("banner_large_url", ["banner_large_url"], "''"),
+        ("banner_target_url", ["banner_target_url"], "''"),
+        ("brand_id", ["brand_id"], "NULL"),
+        ("system_pe", ["system_pe"], "0"),
+        ("start_date", ["start_date"], "NULL"),
+        ("created_at", ["created_at"], "NULL"),
+    ]
+
+    select_parts: list[str] = []
+    row_keys: list[str] = []
+    for key, candidates, default_sql in field_candidates:
+        col = _pick_first_column(cols, candidates)
+        expr = qcol("mc", col) if col else default_sql
+        select_parts.append(f"{expr} AS {qn(key)}")
+        row_keys.append(key)
+
+    created_col = _pick_first_column(cols, ["created_at"])
+    start_col = _pick_first_column(cols, ["start_date"])
+    id_col = _pick_first_column(cols, ["id"])
+    order_parts = []
+    if created_col:
+        order_parts.append(f"{qcol('mc', created_col)} DESC")
+    if start_col:
+        order_parts.append(f"{qcol('mc', start_col)} DESC")
+    if id_col:
+        order_parts.append(f"{qcol('mc', id_col)} DESC")
+    order_sql = ", ".join(order_parts) or "1"
+
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT
+                {", ".join(select_parts)}
+            FROM {qn(table)} mc
+            ORDER BY {order_sql}
+            """
+        )
+        rows = cur.fetchall() or []
+
+    row_dicts = [dict(zip(row_keys, row)) for row in rows]
+    campaign_ids = [
+        normalize_campaign_id(str(row.get("campaign_id") or ""))
+        for row in row_dicts
+        if str(row.get("campaign_id") or "").strip()
+    ]
+    enrollment_counts = _fetch_campaign_relation_count_map(conn, "campaign_doctorcampaignenrollment", campaign_ids)
+    field_rep_counts = _fetch_campaign_relation_count_map(conn, "campaign_campaignfieldrep", campaign_ids)
+
+    records: list[MasterCampaignRecord] = []
+    for row in row_dicts:
+        campaign_id = str(row.get("campaign_id") or "").strip()
+        if not campaign_id:
+            continue
+
+        try:
+            supported = int(row.get("num_doctors_supported") or 0)
+        except Exception:
+            supported = 0
+
+        campaign_id_norm = normalize_campaign_id(campaign_id)
+        record = MasterCampaignRecord(
+            campaign_id=campaign_id,
+            name=str(row.get("name") or "").strip(),
+            num_doctors_supported=supported,
+            add_to_campaign_message=str(row.get("add_to_campaign_message") or "").strip(),
+            register_message=str(row.get("register_message") or "").strip(),
+            banner_small_url=str(row.get("banner_small_url") or "").strip(),
+            banner_large_url=str(row.get("banner_large_url") or "").strip(),
+            banner_target_url=str(row.get("banner_target_url") or "").strip(),
+            brand_id=int(row.get("brand_id")) if row.get("brand_id") is not None else None,
+            system_pe=_coerce_db_bool(row.get("system_pe")),
+            start_date=row.get("start_date"),
+            created_at=row.get("created_at"),
+            enrolled_doctor_count=enrollment_counts.get(campaign_id_norm, 0),
+            field_rep_count=field_rep_counts.get(campaign_id_norm, 0),
+        )
+
+        if pe_only is not None and record.system_pe != pe_only:
+            continue
+        records.append(record)
+
+    term = (search or "").strip().lower()
+    if term:
+        records = [
+            record
+            for record in records
+            if any(
+                term in str(value or "").lower()
+                for value in (
+                    record.campaign_id,
+                    record.name,
+                    record.num_doctors_supported,
+                    record.add_to_campaign_message,
+                    record.register_message,
+                    record.banner_target_url,
+                    record.start_date,
+                    record.brand_id,
+                )
+            )
+        ]
+
+    return records
+
+
+def get_master_campaign_record(campaign_id: str, *, pe_only: Optional[bool] = None) -> Optional[MasterCampaignRecord]:
+    target = normalize_campaign_id(str(campaign_id or ""))
+    if not target:
+        return None
+    for record in list_master_campaign_records(pe_only=pe_only):
+        if normalize_campaign_id(record.campaign_id) == target:
+            return record
+    return None
+
+
+def update_master_campaign_record(
+    campaign_id: str,
+    *,
+    name: str,
+    num_doctors_supported: int,
+    add_to_campaign_message: str,
+    register_message: str,
+    banner_small_url: str,
+    banner_large_url: str,
+    banner_target_url: str,
+    brand_id: Optional[int],
+    system_pe: bool,
+    start_date,
+) -> None:
+    target_raw = str(campaign_id or "").strip()
+    target_norm = normalize_campaign_id(target_raw)
+    if not target_norm:
+        raise ValueError("Invalid campaign id.")
+
+    conn = get_master_connection()
+    table = getattr(settings, "MASTER_DB_CAMPAIGN_TABLE", "campaign_campaign")
+    cols = _get_table_columns(conn, table)
+    id_col = _pick_first_column(cols, ["id"])
+    if not id_col:
+        raise ValueError("Campaign table is missing its primary key column.")
+
+    assignments = []
+    for col_name, value in [
+        ("name", str(name or "").strip()),
+        ("num_doctors_supported", int(num_doctors_supported or 0)),
+        ("add_to_campaign_message", str(add_to_campaign_message or "").strip()),
+        ("register_message", str(register_message or "").strip()),
+        ("banner_small_url", str(banner_small_url or "").strip()),
+        ("banner_large_url", str(banner_large_url or "").strip()),
+        ("banner_target_url", str(banner_target_url or "").strip()),
+        ("brand_id", int(brand_id) if brand_id not in (None, "") else None),
+        ("system_pe", 1 if system_pe else 0),
+        ("start_date", start_date),
+    ]:
+        actual_col = _pick_first_column(cols, [col_name])
+        if actual_col:
+            assignments.append((actual_col, value))
+
+    if not assignments:
+        return
+
+    targets = [target_norm]
+    if target_raw and target_raw != target_norm:
+        targets.append(target_raw)
+    placeholders = ", ".join(["%s"] * len(targets))
+    set_sql = ", ".join([f"{qn(col)} = %s" for col, _ in assignments])
+
+    with transaction.atomic(using=master_alias()):
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                UPDATE {qn(table)}
+                SET {set_sql}
+                WHERE {qn(id_col)} IN ({placeholders})
+                """,
+                [value for _, value in assignments] + targets,
+            )
+
+
+def delete_master_campaign_record(campaign_id: str) -> None:
+    target_raw = str(campaign_id or "").strip()
+    target_norm = normalize_campaign_id(target_raw)
+    if not target_norm:
+        raise ValueError("Invalid campaign id.")
+
+    conn = get_master_connection()
+    campaign_table = getattr(settings, "MASTER_DB_CAMPAIGN_TABLE", "campaign_campaign")
+    enrollment_table = "campaign_doctorcampaignenrollment"
+    campaign_field_rep_table = getattr(settings, "MASTER_DB_CAMPAIGN_FIELD_REP_TABLE", "campaign_campaignfieldrep")
+
+    campaign_cols = _get_table_columns(conn, campaign_table)
+    enrollment_cols = _get_table_columns(conn, enrollment_table)
+    campaign_field_rep_cols = _get_table_columns(conn, campaign_field_rep_table)
+
+    campaign_id_col = _pick_first_column(campaign_cols, ["id"])
+    enrollment_campaign_col = _pick_first_column(enrollment_cols, ["campaign_id"])
+    field_rep_campaign_col = _pick_first_column(campaign_field_rep_cols, ["campaign_id"])
+
+    targets = [target_norm]
+    if target_raw and target_raw != target_norm:
+        targets.append(target_raw)
+    placeholders = ", ".join(["%s"] * len(targets))
+
+    with transaction.atomic(using=master_alias()):
+        with conn.cursor() as cur:
+            if enrollment_campaign_col:
+                cur.execute(
+                    f"DELETE FROM {qn(enrollment_table)} WHERE {qn(enrollment_campaign_col)} IN ({placeholders})",
+                    targets,
+                )
+            if field_rep_campaign_col:
+                cur.execute(
+                    f"DELETE FROM {qn(campaign_field_rep_table)} WHERE {qn(field_rep_campaign_col)} IN ({placeholders})",
+                    targets,
+                )
+            if campaign_id_col:
+                cur.execute(
+                    f"DELETE FROM {qn(campaign_table)} WHERE {qn(campaign_id_col)} IN ({placeholders})",
+                    targets,
+                )
+
+
 
 # =============================================================================
 # FieldRep fetch (MASTER DB) — robust override

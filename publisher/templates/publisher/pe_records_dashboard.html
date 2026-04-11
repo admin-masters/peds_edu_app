@@ -1,0 +1,289 @@
+{% extends "base.html" %}
+
+{% block title %}PE Records Dashboard{% endblock %}
+{% block header_title %}PE Records Dashboard{% endblock %}
+
+{% block content %}
+<div class="page-shell">
+  <section class="card hero-card stack-lg">
+    <div class="section-heading">
+      <div class="section-heading__text">
+        <h1>PE Records Dashboard</h1>
+        <p class="section-subtitle">Dedicated Patient Education data only. Campaigns are sourced from the master database, with local portal setup details layered in where available.</p>
+      </div>
+      <a class="btn btn-secondary" href="{% url 'publisher:pe_records_logout' %}">Logout</a>
+    </div>
+
+    <div class="read-only-panel stack-sm">
+      <div><strong>Access user:</strong> {{ access_user.full_name|default:access_user.email }}</div>
+      <div><strong>Email:</strong> {{ access_user.email }}</div>
+    </div>
+
+    <div class="stats-grid">
+      <article class="stat-card">
+        <div class="stat-card__header">
+          <span class="stat-card__label">Master PE Campaigns</span>
+          <span class="badge badge--primary">Master DB</span>
+        </div>
+        <div class="stat-card__value">{{ stats.master_campaigns }}</div>
+      </article>
+      <article class="stat-card">
+        <div class="stat-card__header">
+          <span class="stat-card__label">Local PE Setups</span>
+          <span class="badge">Local DB</span>
+        </div>
+        <div class="stat-card__value">{{ stats.local_campaigns }}</div>
+      </article>
+      <article class="stat-card">
+        <div class="stat-card__header">
+          <span class="stat-card__label">PE Field Reps</span>
+          <span class="badge badge--primary">Master + Local</span>
+        </div>
+        <div class="stat-card__value">{{ stats.field_reps }}</div>
+      </article>
+      <article class="stat-card">
+        <div class="stat-card__header">
+          <span class="stat-card__label">PE Doctors</span>
+          <span class="badge badge--primary">Master + Local</span>
+        </div>
+        <div class="stat-card__value">{{ stats.doctors }}</div>
+      </article>
+    </div>
+  </section>
+
+  <section class="card stack-lg">
+    <div class="section-heading">
+      <div class="section-heading__text">
+        <h2>Campaigns</h2>
+        <p class="section-subtitle">Master <code>campaign_campaign</code> rows marked as Patient Education campaigns. Local portal setup details are shown side by side when configured.</p>
+      </div>
+      <span class="badge badge--primary">{{ campaign_rows|length }} shown</span>
+    </div>
+
+    <form method="get" class="toolbar">
+      <input type="hidden" name="field_rep_q" value="{{ field_rep_q }}" />
+      <input type="hidden" name="doctor_q" value="{{ doctor_q }}" />
+      <div class="toolbar__grow">
+        <input name="campaign_q" value="{{ campaign_q }}" placeholder="Search campaign ID, name, publisher, or portal setup" />
+      </div>
+      <button type="submit" class="btn btn-secondary">Search</button>
+    </form>
+
+    <div class="table-card">
+      <table>
+        <thead>
+          <tr>
+            <th>Campaign</th>
+            <th>Supported</th>
+            <th>Master Activity</th>
+            <th>Local Portal</th>
+            <th>Portal Owner</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in campaign_rows %}
+            <tr>
+              <td>
+                <div class="stack-xs">
+                  <span class="mono">{{ row.master_record.campaign_id }}</span>
+                  <strong>{{ row.master_record.name|default:"Unnamed campaign" }}</strong>
+                  {% if row.display_campaign_id != row.master_record.campaign_id %}
+                    <span class="muted">Local ID: {{ row.display_campaign_id }}</span>
+                  {% endif %}
+                </div>
+              </td>
+              <td>
+                <div class="stack-xs">
+                  <span>{{ row.master_record.num_doctors_supported }} doctors</span>
+                  <span>{{ row.master_record.start_date|default:"-" }}</span>
+                </div>
+              </td>
+              <td>
+                <div class="stack-xs">
+                  <span>{{ row.master_record.enrolled_doctor_count }} enrolled doctors</span>
+                  <span>{{ row.master_record.field_rep_count }} field reps</span>
+                </div>
+              </td>
+              <td>
+                {% if row.has_local_campaign %}
+                  <div class="stack-xs">
+                    <span class="badge badge--primary">Configured</span>
+                    <span>{{ row.local_campaign.new_video_cluster_name|default:"-" }}</span>
+                    <span>{{ row.local_campaign.start_date }} to {{ row.local_campaign.end_date }}</span>
+                  </div>
+                {% else %}
+                  <span class="badge">Not configured</span>
+                {% endif %}
+              </td>
+              <td>{{ row.local_campaign.publisher_username|default:"-" }}</td>
+              <td>
+                <div class="table-actions">
+                  <a class="btn btn-secondary btn-sm" href="{% url 'publisher:pe_campaign_record_edit' row.master_record.campaign_id %}">Update</a>
+                  <form method="post" action="{% url 'publisher:pe_campaign_record_delete' row.master_record.campaign_id %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete this master PE campaign and any linked local portal setup?');">Delete</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td class="table-empty" colspan="6">No PE campaigns found.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card stack-lg">
+    <div class="section-heading">
+      <div class="section-heading__text">
+        <h2>Field Representatives</h2>
+        <p class="section-subtitle">Only field reps linked to PE campaigns are shown here. The local setup count reflects how many of their PE campaigns already have a portal-side configuration.</p>
+      </div>
+      <span class="badge badge--primary">{{ field_rep_rows|length }} shown</span>
+    </div>
+
+    <form method="get" class="toolbar">
+      <input type="hidden" name="campaign_q" value="{{ campaign_q }}" />
+      <input type="hidden" name="doctor_q" value="{{ doctor_q }}" />
+      <div class="toolbar__grow">
+        <input name="field_rep_q" value="{{ field_rep_q }}" placeholder="Search PE field reps by name, phone, external ID, or campaign" />
+      </div>
+      <button type="submit" class="btn btn-secondary">Search</button>
+    </form>
+
+    <div class="table-card">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Name</th>
+            <th>Brand ID</th>
+            <th>Phone</th>
+            <th>PE Campaigns</th>
+            <th>Local Setups</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in field_rep_rows %}
+            <tr>
+              <td>{{ row.record.id }}</td>
+              <td>{{ row.record.full_name }}</td>
+              <td>{{ row.record.brand_supplied_field_rep_id|default:"-" }}</td>
+              <td>{{ row.record.phone_number|default:"-" }}</td>
+              <td>
+                <div class="stack-xs">
+                  {% for campaign_id in row.pe_campaign_ids %}
+                    <span class="mono">{{ campaign_id }}</span>
+                  {% endfor %}
+                </div>
+              </td>
+              <td>{{ row.local_campaign_count }}</td>
+              <td>
+                {% if row.record.is_active %}
+                  <span class="badge badge--primary">Active</span>
+                {% else %}
+                  <span class="badge">Inactive</span>
+                {% endif %}
+              </td>
+              <td>
+                <div class="table-actions">
+                  <a class="btn btn-secondary btn-sm" href="{% url 'publisher:pe_field_rep_record_edit' row.record.id %}">Update</a>
+                  <form method="post" action="{% url 'publisher:pe_field_rep_record_delete' row.record.id %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete this PE-linked field rep record?');">Delete</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td class="table-empty" colspan="8">No PE field rep records found.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card stack-lg">
+    <div class="section-heading">
+      <div class="section-heading__text">
+        <h2>Doctors</h2>
+        <p class="section-subtitle">Only doctors enrolled in PE campaigns are listed. Local profile status reflects whether the doctor is also present in the portal-side doctor system.</p>
+      </div>
+      <span class="badge badge--primary">{{ doctor_rows|length }} shown</span>
+    </div>
+
+    <form method="get" class="toolbar">
+      <input type="hidden" name="campaign_q" value="{{ campaign_q }}" />
+      <input type="hidden" name="field_rep_q" value="{{ field_rep_q }}" />
+      <div class="toolbar__grow">
+        <input name="doctor_q" value="{{ doctor_q }}" placeholder="Search PE doctors by ID, name, clinic, email, or campaign" />
+      </div>
+      <button type="submit" class="btn btn-secondary">Search</button>
+    </form>
+
+    <div class="table-card">
+      <table>
+        <thead>
+          <tr>
+            <th>Doctor ID</th>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Clinic</th>
+            <th>PE Campaigns</th>
+            <th>Local Profile</th>
+            <th>Local Setups</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in doctor_rows %}
+            <tr>
+              <td><span class="mono">{{ row.record.doctor_id }}</span></td>
+              <td>{{ row.record.full_name }}</td>
+              <td>{{ row.record.email|default:"-" }}</td>
+              <td>
+                <div class="stack-xs">
+                  <span>{{ row.record.clinic_name|default:"-" }}</span>
+                  {% if row.local_profile %}
+                    <span class="muted">{{ row.local_profile.clinic.display_name|default:"" }}</span>
+                  {% endif %}
+                </div>
+              </td>
+              <td>
+                <div class="stack-xs">
+                  {% for campaign_id in row.pe_campaign_ids %}
+                    <span class="mono">{{ campaign_id }}</span>
+                  {% endfor %}
+                </div>
+              </td>
+              <td>
+                {% if row.has_local_profile %}
+                  <span class="badge badge--primary">Synced</span>
+                {% else %}
+                  <span class="badge">Master only</span>
+                {% endif %}
+              </td>
+              <td>{{ row.local_campaign_count }}</td>
+              <td>
+                <div class="table-actions">
+                  <a class="btn btn-secondary btn-sm" href="{% url 'publisher:pe_doctor_record_edit' row.record.doctor_id %}">Update</a>
+                  <form method="post" action="{% url 'publisher:pe_doctor_record_delete' row.record.doctor_id %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete this PE-linked doctor record?');">Delete</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td class="table-empty" colspan="8">No PE doctor records found.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+{% endblock %}

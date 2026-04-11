@@ -329,3 +329,80 @@ class DoctorRecordForm(forms.Form):
                 cleaned[key] = (cleaned.get(key) or "").strip().lower()
 
         return cleaned
+
+
+class PERecordsLoginForm(forms.Form):
+    email = forms.EmailField(label="Email")
+    password = forms.CharField(
+        label="Password",
+        widget=forms.PasswordInput(attrs={"autocomplete": "current-password"}),
+        strip=False,
+    )
+
+    def clean(self):
+        cleaned = super().clean()
+        if "email" in cleaned:
+            cleaned["email"] = (cleaned.get("email") or "").strip().lower()
+        return cleaned
+
+
+class MasterCampaignRecordForm(forms.Form):
+    name = forms.CharField(max_length=255, required=True, label="Campaign name")
+    num_doctors_supported = forms.IntegerField(
+        min_value=0,
+        required=True,
+        label="Doctors supported",
+    )
+    add_to_campaign_message = forms.CharField(
+        required=True,
+        label="Add-to-campaign WhatsApp message",
+        widget=forms.Textarea(attrs={"rows": 4}),
+    )
+    register_message = forms.CharField(
+        required=True,
+        label="Registration message",
+        widget=forms.Textarea(attrs={"rows": 4}),
+    )
+    banner_small_url = forms.URLField(
+        max_length=500,
+        required=False,
+        label="Small banner URL",
+    )
+    banner_large_url = forms.URLField(
+        max_length=500,
+        required=False,
+        label="Large banner URL",
+    )
+    banner_target_url = forms.URLField(
+        max_length=500,
+        required=False,
+        label="Banner target URL",
+    )
+    brand_id = forms.IntegerField(
+        min_value=1,
+        required=False,
+        label="Brand ID",
+    )
+    system_pe = forms.BooleanField(
+        required=False,
+        label="Mark as PE campaign",
+    )
+    start_date = forms.DateField(
+        required=True,
+        label="Start date",
+        widget=forms.DateInput(attrs={"type": "date"}),
+    )
+
+    def clean(self):
+        cleaned = super().clean()
+        for key in (
+            "name",
+            "add_to_campaign_message",
+            "register_message",
+            "banner_small_url",
+            "banner_large_url",
+            "banner_target_url",
+        ):
+            if key in cleaned:
+                cleaned[key] = (cleaned.get(key) or "").strip()
+        return cleaned

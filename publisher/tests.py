@@ -1,8 +1,12 @@
 from __future__ import annotations
 
-from django.test import SimpleTestCase
+from types import SimpleNamespace
+from unittest.mock import patch
 
-from publisher.forms import DoctorRecordForm, FieldRepRecordForm
+from django.test import SimpleTestCase, override_settings
+from django.urls import reverse
+
+from publisher.forms import DoctorRecordForm, FieldRepRecordForm, MasterCampaignRecordForm
 
 
 class DoctorRecordFormTests(SimpleTestCase):
@@ -47,3 +51,66 @@ class FieldRepRecordFormTests(SimpleTestCase):
         )
 
         self.assertTrue(form.is_valid(), form.errors)
+
+
+class MasterCampaignRecordFormTests(SimpleTestCase):
+    def test_accepts_master_campaign_schema_values(self) -> None:
+        form = MasterCampaignRecordForm(
+            data={
+                "name": "Asthma Care Spring 2026",
+                "num_doctors_supported": 25,
+                "add_to_campaign_message": "Hello doctor",
+                "register_message": "Welcome to the campaign",
+                "banner_small_url": "https://example.com/small.png",
+                "banner_large_url": "https://example.com/large.png",
+                "banner_target_url": "https://example.com/landing",
+                "brand_id": 7,
+                "system_pe": "on",
+                "start_date": "2026-04-11",
+            }
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+
+
+@override_settings(
+    STATICFILES_STORAGE="django.contrib.staticfiles.storage.StaticFilesStorage",
+    SESSION_ENGINE="django.contrib.sessions.backends.signed_cookies",
+)
+class PERecordsLoginFlowTests(SimpleTestCase):
+    @patch("publisher.views.authenticate")
+    def test_superuser_can_open_pe_records_session(self, authenticate_mock) -> None:
+        mock_user = SimpleNamespace(
+            pk=7,
+            email="will.superuser@pedsedu.local",
+            is_authenticated=True,
+            is_active=True,
+            is_superuser=True,
+        )
+        authenticate_mock.return_value = mock_user
+        response = self.client.post(
+            reverse("publisher:pe_records_login"),
+            {"email": mock_user.email, "password": "Admin123!"},
+        )
+
+        self.assertRedirects(response, reverse("publisher:pe_records_dashboard"), fetch_redirect_response=False)
+        self.assertEqual(self.client.session.get("pe_records_user_id"), mock_user.pk)
+
+    @patch("publisher.views.authenticate")
+    def test_regular_user_is_rejected_from_pe_records_login(self, authenticate_mock) -> None:
+        mock_user = SimpleNamespace(
+            pk=8,
+            email="publisher.user@pedsedu.local",
+            is_authenticated=True,
+            is_active=True,
+            is_superuser=False,
+        )
+        authenticate_mock.return_value = mock_user
+        response = self.client.post(
+            reverse("publisher:pe_records_login"),
+            {"email": mock_user.email, "password": "Publisher123!"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Only a system superuser can access the PE records dashboard.")
+        self.assertIsNone(self.client.session.get("pe_records_user_id"))

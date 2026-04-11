@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}Edit PE Campaign{% endblock %}
+{% block header_title %}Edit PE Campaign{% endblock %}
+
+{% block content %}
+<div class="page-shell page-shell--narrow">
+  <section class="card stack-lg">
+    <div class="section-heading">
+      <div class="section-heading__text">
+        <h2>Edit Master PE Campaign</h2>
+        <p class="section-subtitle">These fields update the master <code>campaign_campaign</code> record. Local portal setup details are shown below for reference only.</p>
+      </div>
+      <a class="btn btn-secondary" href="{{ hub_url }}">Back to dashboard</a>
+    </div>
+
+    <div class="read-only-panel stack-sm">
+      <div><strong>Campaign ID:</strong> <span class="mono">{{ record.campaign_id }}</span></div>
+      <div><strong>Current enrollments:</strong> {{ record.enrolled_doctor_count }} doctors</div>
+      <div><strong>Linked field reps:</strong> {{ record.field_rep_count }}</div>
+      <div><strong>Local portal setup:</strong>
+        {% if local_campaign %}
+          <span class="badge badge--primary">Available</span>
+          <span>{{ local_campaign.new_video_cluster_name }} | {{ local_campaign.start_date }} to {{ local_campaign.end_date }}</span>
+        {% else %}
+          <span class="badge">Not configured</span>
+        {% endif %}
+      </div>
+    </div>
+
+    <form method="post" class="generated-form">
+      {% csrf_token %}
+
+      {% if form.non_field_errors %}
+        <div class="message error">{{ form.non_field_errors }}</div>
+      {% endif %}
+
+      {{ form.as_p }}
+
+      <div class="form-actions">
+        <button type="submit">Save changes</button>
+        <a class="btn btn-secondary" href="{{ hub_url }}">Cancel</a>
+      </div>
+    </form>
+  </section>
+</div>
+{% endblock %}
