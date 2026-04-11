@@ -62,7 +62,7 @@ def _send_doctor_links_email(doctor: DoctorProfile, campaign_id: str | None = No
     fallback_lines = [
         f"Hello {doctor.user.full_name or doctor.user.email},",
         "",
-        "Your clinic has access to the CPD in Clinic portal.",
+        "Your clinic has access to the Patient Education portal.",
         "",
         f"Clinic link (doctor/staff sharing screen): {clinic_link}",
         f"Login link: {login_link}",
@@ -135,7 +135,7 @@ def _send_doctor_links_email(doctor: DoctorProfile, campaign_id: str | None = No
         body = f"{body.rstrip()}\n\nNeed help? Open doctor support here:\n{support_link}"
 
     return send_email_via_sendgrid(
-        subject="CPD in Clinic portal access",
+        subject="Login Credentials - Patient Education System",
         to_emails=[doctor.user.email],
         plain_text_content=body,
     )
@@ -963,7 +963,7 @@ def request_password_reset(request):
             stored = get_stored_password_for_role(ident.row, ident.role)
 
             password_to_send = None
-            email_subject = "Your CPD in Clinic portal login password"
+            email_subject = "Login Credentials - Patient Education System"
             greeting_name = (ident.display_name or email).strip()
 
             # If the DB stores plaintext, you *can* email it (as requested).
@@ -1007,7 +1007,7 @@ def request_password_reset(request):
                 body_lines = [
                     f"Hello {greeting_name},",
                     "",
-                    "Use the password below to login to the CPD in Clinic portal:",
+                    "Use the password below to login to the Patient Education portal:",
                     "",
                     f"Password: {password_to_send}",
                     "",
@@ -1132,7 +1132,7 @@ def _send_master_doctor_access_email(
         lines = [
             f"Hello {full_name},",
             "",
-            "Your CPD in Clinic portal account has been created.",
+            "Your Patient Education portal account has been created.",
             "",
             f"Doctor ID: {doctor_id}",
             f"Login link: {login_link}",
@@ -1152,7 +1152,7 @@ def _send_master_doctor_access_email(
         body = "\n".join(lines)
 
     return send_email_via_sendgrid(
-        subject="CPD in Clinic portal access",
+        subject="Login Credentials - Patient Education System",
         to_emails=[to_email],
         plain_text_content=body,
     )
