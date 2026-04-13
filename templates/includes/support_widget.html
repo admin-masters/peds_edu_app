@@ -1,7 +1,7 @@
 <style>
   #support-chatbot-root {
-    --support-launcher-width: clamp(210px, 24vw, 320px);
-    --support-launcher-height: clamp(72px, 7vw, 104px);
+    --support-launcher-width: clamp(176px, 16vw, 248px);
+    --support-launcher-height: clamp(56px, 4.8vw, 78px);
     --support-launcher-radius: calc(var(--support-launcher-height) / 2);
     --support-launcher-shadow:
       0 20px 34px rgba(36, 117, 133, 0.22),
@@ -38,11 +38,11 @@
     width: 100%;
     height: 100%;
     margin: 0;
-    padding: clamp(8px, 1vw, 12px) clamp(18px, 1.9vw, 26px) clamp(8px, 1vw, 12px) clamp(10px, 1vw, 14px);
+    padding: clamp(6px, 0.6vw, 10px) clamp(14px, 1.2vw, 20px) clamp(6px, 0.6vw, 10px) clamp(8px, 0.8vw, 12px);
     display: inline-flex;
     align-items: center;
     justify-content: flex-start;
-    gap: clamp(12px, 1.4vw, 20px);
+    gap: clamp(10px, 0.9vw, 14px);
     border-radius: var(--support-launcher-radius);
     border: 0;
     background: linear-gradient(135deg, var(--support-brand-start), var(--support-brand-end));
@@ -95,10 +95,10 @@
   #support-chatbot-root .support-chatbot__launcher-copy {
     display: inline-block;
     min-width: 0;
-    font-size: clamp(1.15rem, 2vw, 1.8rem);
+    font-size: clamp(0.95rem, 1.2vw, 1.35rem);
     line-height: 1;
     font-weight: 700;
-    letter-spacing: -0.04em;
+    letter-spacing: -0.03em;
     white-space: nowrap;
     text-align: left;
   }
@@ -296,19 +296,19 @@
 
   @media (max-width: 767px) {
     #support-chatbot-root {
-      --support-launcher-width: 220px;
-      --support-launcher-height: 68px;
+      --support-launcher-width: min(176px, calc(100vw - 24px));
+      --support-launcher-height: 56px;
       right: max(12px, env(safe-area-inset-right)) !important;
       bottom: max(12px, env(safe-area-inset-bottom)) !important;
     }
 
     #support-chatbot-root .support-chatbot__launcher {
-      padding-right: 18px;
-      gap: 12px;
+      padding-right: 16px;
+      gap: 10px;
     }
 
     #support-chatbot-root .support-chatbot__launcher-copy {
-      font-size: clamp(1.05rem, 5.4vw, 1.35rem);
+      font-size: 0.98rem;
     }
 
     #support-chatbot-root .support-chatbot__panel {
