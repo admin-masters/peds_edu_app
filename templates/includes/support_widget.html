@@ -1,15 +1,25 @@
 <style>
   #support-chatbot-root {
+    --support-launcher-width: clamp(210px, 24vw, 320px);
+    --support-launcher-height: clamp(72px, 7vw, 104px);
+    --support-launcher-radius: calc(var(--support-launcher-height) / 2);
+    --support-launcher-shadow:
+      0 20px 34px rgba(36, 117, 133, 0.22),
+      0 0 0 1px rgba(255, 255, 255, 0.08) inset;
+    --support-brand-start: #2f92a4;
+    --support-brand-end: #2e8998;
+    --support-brand-dark: #277988;
     position: fixed !important;
-    right: 18px !important;
-    bottom: 18px !important;
+    right: max(18px, env(safe-area-inset-right)) !important;
+    bottom: max(18px, env(safe-area-inset-bottom)) !important;
     left: auto !important;
     top: auto !important;
-    width: 56px !important;
-    height: 56px !important;
+    width: min(var(--support-launcher-width), calc(100vw - 24px)) !important;
+    height: var(--support-launcher-height) !important;
     z-index: 2147482000 !important;
     pointer-events: none;
     display: block;
+    overflow: visible;
     font-family: "Inter", "Segoe UI", Arial, sans-serif;
   }
 
@@ -25,17 +35,19 @@
 
   #support-chatbot-root .support-chatbot__launcher {
     appearance: none;
-    width: 56px;
-    height: 56px;
+    width: 100%;
+    height: 100%;
     margin: 0;
-    padding: 0;
+    padding: clamp(8px, 1vw, 12px) clamp(18px, 1.9vw, 26px) clamp(8px, 1vw, 12px) clamp(10px, 1vw, 14px);
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    border-radius: 999px;
+    justify-content: flex-start;
+    gap: clamp(12px, 1.4vw, 20px);
+    border-radius: var(--support-launcher-radius);
     border: 0;
-    background: linear-gradient(135deg, #2563eb, #1d4ed8);
-    box-shadow: 0 18px 34px rgba(15, 23, 42, 0.22);
+    background: linear-gradient(135deg, var(--support-brand-start), var(--support-brand-end));
+    box-shadow: var(--support-launcher-shadow);
+    color: #ffffff;
     cursor: pointer;
     pointer-events: auto;
     transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
@@ -43,24 +55,52 @@
 
   #support-chatbot-root .support-chatbot__launcher:hover {
     transform: translateY(-1px);
-    box-shadow: 0 22px 40px rgba(15, 23, 42, 0.28);
+    box-shadow:
+      0 24px 42px rgba(36, 117, 133, 0.26),
+      0 0 0 1px rgba(255, 255, 255, 0.1) inset;
   }
 
   #support-chatbot-root .support-chatbot__launcher:focus-visible,
   #support-chatbot-root .support-chatbot__close:focus-visible,
   #support-chatbot-root .support-chatbot__retry:focus-visible,
-  #support-chatbot-root .support-chatbot__link:focus-visible {
-    outline: 3px solid rgba(37, 99, 235, 0.28);
+  #support-chatbot-root .support-chatbot__link:focus-visible,
+  #support-chatbot-root .support-chatbot__secondary-link:focus-visible {
+    outline: 3px solid rgba(47, 146, 164, 0.24);
     outline-offset: 3px;
   }
 
+  #support-chatbot-root .support-chatbot__launcher-icon-wrap {
+    width: calc(var(--support-launcher-height) - 20px);
+    height: calc(var(--support-launcher-height) - 20px);
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.16);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+
   #support-chatbot-root .support-chatbot__icon {
-    width: 24px;
-    height: 24px;
+    width: clamp(24px, 2.5vw, 34px);
+    height: clamp(24px, 2.5vw, 34px);
     display: block;
     stroke: #ffffff;
     stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
     fill: none;
+  }
+
+  #support-chatbot-root .support-chatbot__launcher-copy {
+    display: inline-block;
+    min-width: 0;
+    font-size: clamp(1.15rem, 2vw, 1.8rem);
+    line-height: 1;
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    white-space: nowrap;
+    text-align: left;
   }
 
   #support-chatbot-root .support-chatbot__sr-only {
@@ -78,7 +118,7 @@
   #support-chatbot-root .support-chatbot__panel {
     position: absolute;
     right: 0;
-    bottom: calc(100% + 12px);
+    bottom: calc(100% + 14px);
     width: min(390px, calc(100vw - 24px));
     max-height: min(620px, calc(100vh - 96px));
     border: 1px solid rgba(203, 213, 225, 0.9);
@@ -107,7 +147,7 @@
     justify-content: space-between;
     gap: 16px;
     padding: 18px 18px 16px;
-    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    background: linear-gradient(135deg, var(--support-brand-start), var(--support-brand-dark));
     color: #ffffff;
   }
 
@@ -215,8 +255,8 @@
   #support-chatbot-root .support-chatbot__spinner {
     width: 34px;
     height: 34px;
-    border: 3px solid rgba(37, 99, 235, 0.18);
-    border-top-color: #2563eb;
+    border: 3px solid rgba(47, 146, 164, 0.18);
+    border-top-color: var(--support-brand-start);
     border-radius: 999px;
     animation: support-chatbot-spin 0.8s linear infinite;
   }
@@ -244,7 +284,7 @@
   }
 
   #support-chatbot-root .support-chatbot__retry {
-    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    background: linear-gradient(135deg, var(--support-brand-start), var(--support-brand-dark));
     color: #ffffff;
   }
 
@@ -256,15 +296,19 @@
 
   @media (max-width: 767px) {
     #support-chatbot-root {
-      right: 12px !important;
-      bottom: 12px !important;
-      width: 52px !important;
-      height: 52px !important;
+      --support-launcher-width: 220px;
+      --support-launcher-height: 68px;
+      right: max(12px, env(safe-area-inset-right)) !important;
+      bottom: max(12px, env(safe-area-inset-bottom)) !important;
     }
 
     #support-chatbot-root .support-chatbot__launcher {
-      width: 52px;
-      height: 52px;
+      padding-right: 18px;
+      gap: 12px;
+    }
+
+    #support-chatbot-root .support-chatbot__launcher-copy {
+      font-size: clamp(1.05rem, 5.4vw, 1.35rem);
     }
 
     #support-chatbot-root .support-chatbot__panel {
@@ -306,9 +350,12 @@
     aria-controls="support-chatbot-panel"
     aria-expanded="false"
   >
-    <svg class="support-chatbot__icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M21 11.5a8.38 8.38 0 0 1-1 4 8.5 8.5 0 0 1-7.5 4.5 8.38 8.38 0 0 1-4-1L3 21l1.5-5.5a8.38 8.38 0 0 1-1-4 8.5 8.5 0 1 1 17 0Z"></path>
-    </svg>
+    <span class="support-chatbot__launcher-icon-wrap" aria-hidden="true">
+      <svg class="support-chatbot__icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M21 11.5a8.38 8.38 0 0 1-1 4 8.5 8.5 0 0 1-7.5 4.5 8.38 8.38 0 0 1-4-1L3 21l1.5-5.5a8.38 8.38 0 0 1-1-4 8.5 8.5 0 1 1 17 0Z"></path>
+      </svg>
+    </span>
+    <span class="support-chatbot__launcher-copy" aria-hidden="true">Need Help?</span>
     <span class="support-chatbot__sr-only">{{ support_widget.launcher_label }}</span>
   </button>
 
